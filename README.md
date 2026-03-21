@@ -144,9 +144,6 @@ Beispiel-Eintrag:
 Unterstützt werden `word` (ganze Wörter) und `phrase` (ganze Wortfolgen).
 
 
-## Neue Standard-TTS-Funktionen
+## Source
 
-- Beim ersten Start ist `windows_sapi` als TTS-Backend vorausgewählt.
-- Neue Assistent-Antworten werden standardmäßig automatisch vorgelesen.
-- In den Einstellungen gibt es bei Windows-SAPI jetzt `Lexikon bearbeiten …` für das lokale Aussprache-Lexikon.
-- Das Lexikon liegt unter `app_data/tts/sapi_lexicon.json`.
+https://github.com/zeittresor/OllamaVibeDesk/
