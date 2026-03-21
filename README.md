@@ -17,6 +17,12 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - Windows installer and launcher batch files
 - no cloud requirement for normal chat usage once local services are present
 
+## Example with voice output (german language)
+
+<img width="1416" height="945" alt="grafik" src="https://github.com/user-attachments/assets/ec2a2fc3-176a-46d1-9edd-a8e971a1d764" />
+
+https://github.com/user-attachments/assets/4dbec30d-9411-43f4-a442-8d32712e9dcd
+
 ## Folder layout
 
 - `install_windows.bat` – creates a local virtual environment and installs Python packages for the GUI
