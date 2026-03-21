@@ -5,8 +5,8 @@ title OllamaVibeDesk
 cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" (
-    echo Die virtuelle Umgebung wurde nicht gefunden.
-    echo Bitte zuerst install_windows.bat ausfuehren.
+    echo The virtual environment was not found.
+    echo Please run install_windows.bat first.
     pause
     exit /b 1
 )

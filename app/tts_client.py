@@ -11,12 +11,27 @@ import requests
 
 
 class TTSClient:
-    def __init__(self, backend: str, base_url: str, voice: str, model: str, audio_format: str = 'wav') -> None:
+    def __init__(
+        self,
+        backend: str,
+        base_url: str,
+        voice: str,
+        model: str,
+        audio_format: str = 'wav',
+        windows_sapi_rate: int = 0,
+        windows_sapi_pitch: int = 0,
+        windows_sapi_volume: int = 100,
+        windows_sapi_language: str = 'de-DE',
+    ) -> None:
         self.backend = (backend or 'disabled').strip()
         self.base_url = base_url.rstrip('/')
         self.voice = voice
         self.model = model
         self.audio_format = audio_format.lower().strip() or 'wav'
+        self.windows_sapi_rate = int(windows_sapi_rate)
+        self.windows_sapi_pitch = int(windows_sapi_pitch)
+        self.windows_sapi_volume = int(windows_sapi_volume)
+        self.windows_sapi_language = windows_sapi_language or 'de-DE'
 
     def enabled(self) -> bool:
         return self.backend in {'vibevoice_openai', 'windows_sapi'}
@@ -122,12 +137,24 @@ finally {
             'OVD_TTS_TEXT': text,
             'OVD_TTS_OUT': str(output_path),
             'OVD_TTS_VOICE': self.voice or '',
+            'OVD_TTS_RATE': str(self.windows_sapi_rate),
+            'OVD_TTS_PITCH': str(self.windows_sapi_pitch),
+            'OVD_TTS_VOLUME': str(self.windows_sapi_volume),
+            'OVD_TTS_LANG': self.windows_sapi_language,
         }
         script = r"""
 Add-Type -AssemblyName System.Speech
+Add-Type -AssemblyName System.Security
 $text = $env:OVD_TTS_TEXT
 $out = $env:OVD_TTS_OUT
 $voice = $env:OVD_TTS_VOICE
+$lang = if ([string]::IsNullOrWhiteSpace($env:OVD_TTS_LANG)) { 'de-DE' } else { $env:OVD_TTS_LANG }
+$rate = 0
+$pitch = 0
+$volume = 100
+[int]::TryParse($env:OVD_TTS_RATE, [ref]$rate) | Out-Null
+[int]::TryParse($env:OVD_TTS_PITCH, [ref]$pitch) | Out-Null
+[int]::TryParse($env:OVD_TTS_VOLUME, [ref]$volume) | Out-Null
 if ([string]::IsNullOrWhiteSpace($text)) { throw 'Kein Text zum Vorlesen übergeben.' }
 if ([string]::IsNullOrWhiteSpace($out)) { throw 'Kein Ausgabe-Pfad übergeben.' }
 $tts = New-Object System.Speech.Synthesis.SpeechSynthesizer
@@ -138,12 +165,27 @@ try {
             $tts.SelectVoice($voice)
         }
     }
+    $tts.Rate = [Math]::Max(-10, [Math]::Min(10, $rate))
+    $tts.Volume = [Math]::Max(0, [Math]::Min(100, $volume))
     $parent = Split-Path -Parent $out
     if (-not [string]::IsNullOrWhiteSpace($parent)) {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
     $tts.SetOutputToWaveFile($out)
-    $tts.Speak($text)
+    $escaped = [System.Security.SecurityElement]::Escape($text)
+    $pitchPct = [Math]::Max(-50, [Math]::Min(50, $pitch * 5))
+    $pitchAttr = if ($pitchPct -ge 0) { "+${pitchPct}%" } else { "${pitchPct}%" }
+    $ssmlInner = "<prosody pitch='$pitchAttr'>$escaped</prosody>"
+    if (-not [string]::IsNullOrWhiteSpace($voice)) {
+        $ssmlInner = "<voice name='$voice'>$ssmlInner</voice>"
+    }
+    $ssml = "<speak version='1.0' xml:lang='$lang'>$ssmlInner</speak>"
+    try {
+        $tts.SpeakSsml($ssml)
+    }
+    catch {
+        $tts.Speak($text)
+    }
     $tts.SetOutputToNull()
     Write-Output 'OK'
 }

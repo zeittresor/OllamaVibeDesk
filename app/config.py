@@ -18,6 +18,7 @@ CHATS_DIR = APP_DATA_DIR / "chats"
 AUDIO_DIR = APP_DATA_DIR / "audio"
 CACHE_DIR = APP_DATA_DIR / "cache"
 TTS_DIR = APP_DATA_DIR / "tts"
+LANG_DIR = APP_ROOT / "lang"
 SAPI_LEXICON_PATH = TTS_DIR / "sapi_lexicon.json"
 CONFIG_PATH = APP_DATA_DIR / "config.json"
 
@@ -31,6 +32,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "autoplay_tts": True,
     "auto_read_assistant_responses": True,
     "windows_sapi_lexicon_enabled": False,
+    "windows_sapi_rate": 0,
+    "windows_sapi_pitch": 0,
+    "windows_sapi_volume": 100,
+    "interface_language": "de",
     "theme": "Midnight",
     "last_model": "",
     "system_prompt": "",
@@ -83,6 +88,7 @@ def ensure_directories() -> None:
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     TTS_DIR.mkdir(parents=True, exist_ok=True)
+    LANG_DIR.mkdir(parents=True, exist_ok=True)
     ensure_default_sapi_lexicon()
 
 

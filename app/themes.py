@@ -9,6 +9,9 @@ QWidget {
 QMainWindow {
     background: #10131a;
 }
+QLabel {
+    background: transparent;
+}
 QFrame#Sidebar, QFrame#HeaderBar, QFrame#ComposerFrame, QFrame#ChatSurface {
     background: #171b24;
     border: 1px solid #252b36;
@@ -98,6 +101,9 @@ QWidget {
 }
 QMainWindow {
     background: #eef2f7;
+}
+QLabel {
+    background: transparent;
 }
 QFrame#Sidebar, QFrame#HeaderBar, QFrame#ComposerFrame, QFrame#ChatSurface {
     background: #ffffff;
