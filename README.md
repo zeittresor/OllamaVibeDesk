@@ -62,7 +62,7 @@ The app reads models from Ollama and lets you pick one from the dropdown.
 The GUI supports these modes:
 
 - **Microsoft SAPI-compatible**
-- **VibeVoice OpenAI-compatible**
+- **Microsoft VibeVoice OpenAI-compatible**
 - **Disabled**
 
 If you enable `vibevoice_openai`, the GUI talks to a local endpoint like:
