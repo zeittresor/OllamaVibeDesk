@@ -23,6 +23,8 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 
 https://github.com/user-attachments/assets/4dbec30d-9411-43f4-a442-8d32712e9dcd
 
+Note: Using VibeVoice Mode takes some time to generate a voice output in contrast to the use of the default Windows Sapi.
+
 ## Folder layout
 
 - `install_windows.bat` – creates a local virtual environment and installs Python packages for the GUI
