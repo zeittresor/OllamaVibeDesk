@@ -2,7 +2,6 @@
 
 Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **theme support**, **chat history**, **streaming responses**, and optional **local TTS playback/export** through a **VibeVoice-Realtime-0.5B compatible server**.
 
-<img width="700" height="445" alt="interface" src="https://github.com/user-attachments/assets/23af2133-858c-4e92-adfc-86f487fe7d13" />
 
 ## Main features
 
