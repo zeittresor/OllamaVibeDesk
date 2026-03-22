@@ -217,10 +217,11 @@
   "read_all_include_names_label": "Prononcer les noms des interlocuteurs avec Lire tout",
   "user_display_name_label": "Nom affiché pour vous",
   "assistant_display_name_label": "Nom affiché pour l’assistant",
-  "auto_answer_settings_hint": "Modifier des phrases supplémentaires pour le mode ELIZA.",
+  "auto_answer_settings_hint": "Modifier des phrases supplémentaires et des mots-thèmes pour le mode ELIZA.",
   "edit_auto_answer_phrases": "Modifier les phrases auto-réponse …",
   "auto_answer_editor_title": "Modifier les phrases de réponse automatique",
-  "auto_answer_editor_info": "Le fichier JSON est chargé directement depuis le dossier de l’application. Sous 'phrases', vous pouvez définir des phrases supplémentaires par langue, utilisées en plus du mode ELIZA.",
+  "auto_answer_editor_info": "Le fichier JSON est chargé directement depuis le dossier de l’application. Sous 'phrases', vous pouvez définir des phrases supplémentaires par langue. Sous 'topic_words', vous pouvez définir des thèmes utilisés pour des changements de sujet en douceur.",
   "empty_auto_answer_title": "Fichier vide",
-  "empty_auto_answer_text": "Le fichier JSON ne doit pas être vide."
+  "empty_auto_answer_text": "Le fichier JSON ne doit pas être vide.",
+  "tts_model_tooltip": "Uniquement pertinent pour les backends TTS compatibles OpenAI comme VibeVoice. En général, tu peux laisser 'tts-1-hd'."
 }
