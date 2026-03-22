@@ -15,7 +15,7 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - optional WAV export via a local TTS endpoint
 - Windows installer and launcher batch files
 - no cloud requirement for normal chat usage once local services are present
-- multiple language support 
+- multiple language support (currently: german, english, french, spanish, russian)
 
 ## Example with voice output (german language)
 
