@@ -11,7 +11,7 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - persistent chat sessions stored **inside the app folder**
 - theme switching
 - cancel/stop generation
-- per-message **Vorlesen** action for assistant replies
+- per-message **Vorlesen** action for assistant replies by voice
 - optional WAV export via a local TTS endpoint
 - Windows installer and launcher batch files
 - no cloud requirement for normal chat usage once local services are present
