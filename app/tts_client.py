@@ -9,6 +9,8 @@ from typing import List, Tuple
 
 import requests
 
+from .config import TTS_DIR
+
 
 class TTSClient:
     def __init__(
@@ -140,6 +142,98 @@ catch {
                 items.append((parts[1], parts[0]))
         return items
 
+    @staticmethod
+    def _language_name_from_code(code: str) -> str:
+        mapping = {
+            'de': 'German',
+            'en': 'English',
+            'fr': 'French',
+            'in': 'Hindi',
+            'it': 'Italian',
+            'jp': 'Japanese',
+            'kr': 'Korean',
+            'nl': 'Dutch',
+            'pl': 'Polish',
+            'pt': 'Portuguese',
+            'sp': 'Spanish',
+        }
+        return mapping.get((code or '').lower(), (code or '').upper())
+
+    @staticmethod
+    def _vibevoice_meta_from_stem(stem: str) -> dict:
+        value = (stem or '').strip()
+        meta = {
+            'value': value,
+            'display': value,
+            'language_code': '',
+            'language_name': '',
+            'gender': '',
+        }
+        if not value:
+            return meta
+
+        # Official extra presets: de-Spk0_man, en-Carter_man, ...
+        import re
+        m = re.match(r'^(?P<lang>[a-z]{2})-(?P<name>.+?)_(?P<gender>man|woman)$', value, flags=re.IGNORECASE)
+        if m:
+            lang = m.group('lang').lower()
+            name = m.group('name').strip()
+            gender = m.group('gender').lower()
+            meta.update({
+                'display': name,
+                'language_code': lang,
+                'language_name': TTSClient._language_name_from_code(lang),
+                'gender': 'male' if gender == 'man' else 'female',
+            })
+            return meta
+
+        # Known built-in aliases exposed by wrapper API.
+        alias_map = {
+            'carter': ('en', 'English', 'male'),
+            'davis': ('en', 'English', 'male'),
+            'emma': ('en', 'English', 'female'),
+            'frank': ('en', 'English', 'male'),
+            'grace': ('en', 'English', 'female'),
+            'mike': ('en', 'English', 'male'),
+            'samuel': ('in', 'Hindi', 'male'),
+        }
+        info = alias_map.get(value.casefold())
+        if info:
+            meta.update({
+                'language_code': info[0],
+                'language_name': info[1],
+                'gender': info[2],
+            })
+        return meta
+
+    @classmethod
+    def _vibevoice_label(cls, value: str, *, local_only: bool = False) -> str:
+        meta = cls._vibevoice_meta_from_stem(value)
+        parts = [meta['display'] or value]
+        extras = []
+        if meta['language_name']:
+            extras.append(meta['language_name'])
+        elif meta['language_code']:
+            extras.append(meta['language_code'].upper())
+        if meta['gender']:
+            extras.append(meta['gender'])
+        if extras:
+            parts.append('— ' + ', '.join(extras))
+        if local_only:
+            parts.append('[local file — restart wrapper]')
+        return ' '.join(parts).strip()
+
+    def _list_local_vibevoice_voices(self) -> List[str]:
+        voices_dir = TTS_DIR / 'vibevoice_openai' / 'models' / 'voices'
+        if not voices_dir.exists():
+            return []
+        voices: List[str] = []
+        for path in sorted(voices_dir.glob('*.pt')):
+            stem = path.stem.strip()
+            if stem:
+                voices.append(stem)
+        return sorted(set(voices), key=str.casefold)
+
     def list_voice_entries(self) -> List[Tuple[str, str]]:
         if self.backend == 'windows_sapi':
             entries: List[Tuple[str, str]] = []
@@ -155,6 +249,30 @@ catch {
                     continue
                 entries.append((self.make_onecore_voice_id(voice_id), f"{label} [Windows Voice]"))
                 seen.add(key)
+            return entries
+
+        if self.backend == 'vibevoice_openai':
+            entries: List[Tuple[str, str]] = []
+            seen = set()
+            api_voices: List[str] = []
+            try:
+                api_voices = self.list_voices()
+            except Exception:
+                api_voices = []
+            for voice in api_voices:
+                key = voice.casefold()
+                if key in seen:
+                    continue
+                entries.append((voice, self._vibevoice_label(voice)))
+                seen.add(key)
+
+            for voice in self._list_local_vibevoice_voices():
+                key = voice.casefold()
+                if key in seen:
+                    continue
+                entries.append((voice, self._vibevoice_label(voice, local_only=True)))
+                seen.add(key)
+
             return entries
 
         return [(voice, voice) for voice in self.list_voices()]
@@ -189,7 +307,8 @@ catch {
                     if name:
                         voices.append(name)
 
-        return sorted(set(voices))
+        local_voices = self._list_local_vibevoice_voices()
+        return sorted(set(voices + local_voices), key=str.casefold)
 
     def _synthesize_windows_sapi_to_file(self, text: str, output_path: Path) -> Path:
         if os.name != 'nt':
@@ -392,7 +511,7 @@ catch {
         response = requests.post(
             f'{self.base_url}/audio/speech',
             json=payload,
-            timeout=300,
+            timeout=1200,
         )
         response.raise_for_status()
 

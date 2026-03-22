@@ -776,6 +776,8 @@ class SettingsDialog(QDialog):
     def refresh_tts_voice_options(self) -> None:
         backend = self.current_tts_backend()
         current_voice = self._current_voice_value() or self.config.get("tts_voice", "")
+        if backend == "vibevoice_openai" and str(current_voice).startswith(("sapi::", "onecore::")):
+            current_voice = ""
         hint = ""
         default_voice = "Emma"
         voice_entries: list[tuple[str, str]] = []
@@ -784,7 +786,7 @@ class SettingsDialog(QDialog):
             hint = self.t("tts_hint_windows_sapi", "Verwendet Windows-Desktop-SAPI und zusätzlich erkannte Windows-/OneCore-Stimmen. Kein externer Download nötig.")
             default_voice = ""
         elif backend == "vibevoice_openai":
-            hint = self.t("tts_hint_vibevoice", "Benötigt den lokalen VibeVoice-Wrapper.")
+            hint = self.t("tts_hint_vibevoice", "Benötigt den lokalen VibeVoice-Wrapper. Stimmen aus app_data/tts/vibevoice_openai/models/voices werden zusätzlich erkannt; falls sie nur als lokale Datei erscheinen, den Wrapper einmal neu starten. Zusätzliche offizielle Presets können im VibeVoice-Setup heruntergeladen werden.")
             default_voice = "Emma"
         else:
             hint = self.t("tts_hint_disabled", "TTS ist deaktiviert.")
@@ -809,7 +811,10 @@ class SettingsDialog(QDialog):
         self.tts_voice.clear()
         for value, label in voice_entries:
             self.tts_voice.addItem(label, value)
-        final_voice = current_voice or self.config.get("tts_voice", default_voice)
+        config_voice = self.config.get("tts_voice", default_voice)
+        if backend == "vibevoice_openai" and str(config_voice).startswith(("sapi::", "onecore::")):
+            config_voice = default_voice
+        final_voice = current_voice or config_voice
         if final_voice:
             selected_index = -1
             for i in range(self.tts_voice.count()):
@@ -873,31 +878,38 @@ class TTSActionWorker(QObject):
     log = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, base_url: str, action: str) -> None:
+    def __init__(self, base_url: str, action: str, translations: dict[str, str] | None = None) -> None:
         super().__init__()
         self.base_url = base_url
         self.action = action
+        self.translations = translations or {}
+
+    def t(self, key: str, default: str) -> str:
+        return self.translations.get(key, default)
 
     def run(self) -> None:
-        manager = VibeVoiceManager(self.base_url)
+        manager = VibeVoiceManager(self.base_url, self.t)
         try:
             if self.action == "auto_setup":
                 success, message = manager.auto_setup(self.log.emit)
                 self.finished.emit(success, message)
             elif self.action == "install":
                 manager.install_or_update(self.log.emit)
-                self.finished.emit(True, "VibeVoice-Setup abgeschlossen.")
+                self.finished.emit(True, self.t("tts_setup_auto_done", "VibeVoice-Setup abgeschlossen."))
             elif self.action == "install_ffmpeg":
                 manager.install_ffmpeg_via_winget(self.log.emit)
-                self.finished.emit(True, "FFmpeg-Installation abgeschlossen oder übersprungen.")
+                self.finished.emit(True, self.t("tts_setup_ffmpeg_done", "FFmpeg-Installation abgeschlossen oder übersprungen."))
             elif self.action == "start":
                 manager.start_server(self.log.emit)
-                self.finished.emit(True, "Startversuch abgeschlossen.")
+                self.finished.emit(True, self.t("tts_setup_start_done", "Startversuch abgeschlossen."))
             elif self.action == "stop":
                 manager.stop_server(self.log.emit)
-                self.finished.emit(True, "Stoppsignal abgeschlossen.")
+                self.finished.emit(True, self.t("tts_setup_stop_done", "Stoppsignal abgeschlossen."))
+            elif self.action == "download_voices":
+                _total, downloaded = manager.download_official_voice_presets(self.log.emit)
+                self.finished.emit(True, self.t("tts_setup_download_voices_done", "Additional voice presets downloaded: {count}.").format(count=downloaded))
             else:
-                self.finished.emit(False, f"Unbekannte Aktion: {self.action}")
+                self.finished.emit(False, self.t("tts_setup_unknown_action", "Unbekannte Aktion: {action}").format(action=self.action))
         except Exception as exc:
             self.finished.emit(False, str(exc))
 
@@ -905,23 +917,22 @@ class TTSActionWorker(QObject):
 class TTSSetupDialog(QDialog):
     def __init__(self, config: dict, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("TTS-Setup-Assistent")
-        self.resize(860, 680)
-        self.setModal(True)
         self.config = config
+        self.translations = load_language_pack(self.config.get("interface_language", "de"))
+        self.setWindowTitle(self.t("tts_setup_title", "TTS-Setup-Assistent"))
+        self.resize(860, 700)
+        self.setModal(True)
         self.worker_thread: Optional[QThread] = None
         self.worker: Optional[TTSActionWorker] = None
+        self._busy_action: str = ""
+        self._elapsed_seconds = 0
+
+        self.elapsed_timer = QTimer(self)
+        self.elapsed_timer.setInterval(1000)
+        self.elapsed_timer.timeout.connect(self._tick_elapsed)
 
         root = QVBoxLayout(self)
-        info = QLabel(
-            "Dieser Assistent bündelt die automatische VibeVoice-Einrichtung. Er prüft den Status, "
-            "überspringt FFmpeg, wenn es bereits vorhanden ist, lädt den Wrapper herunter und richtet "
-            "ihn soweit möglich ein. Wichtig: Der eigentliche Modelldownload beginnt erst, wenn der "
-            "Wrapper erfolgreich laufen kann. Laut Wrapper-README braucht dieser Weg Python 3.13, "
-            "ffmpeg und beim ersten echten Start zusätzlich etwa 2 GB Modelle und ~22 MB Stimmen. "
-            "Für einen sofort nutzbaren Offline-Fallback gibt es in den Einstellungen auch 'windows_sapi' "
-            "mit integrierten Windows-Stimmen."
-        )
+        info = QLabel(self.t("tts_setup_info", "Dieser Assistent bündelt die automatische VibeVoice-Einrichtung."))
         info.setWordWrap(True)
         root.addWidget(info)
 
@@ -930,23 +941,42 @@ class TTSSetupDialog(QDialog):
         self.status_label.setWordWrap(True)
         root.addWidget(self.status_label)
 
+        self.current_step_label = QLabel(self.t("tts_setup_status_ready", "Bereit."))
+        self.current_step_label.setObjectName("SubtleLabel")
+        self.current_step_label.setWordWrap(True)
+        root.addWidget(self.current_step_label)
+
+        progress_row = QHBoxLayout()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        progress_row.addWidget(self.progress_bar, 1)
+        self.elapsed_label = QLabel(self.t("tts_setup_elapsed", "Verstrichen: {seconds} s").format(seconds=0))
+        self.elapsed_label.setObjectName("SubtleLabel")
+        progress_row.addWidget(self.elapsed_label)
+        root.addLayout(progress_row)
+
         button_row = QHBoxLayout()
-        self.auto_setup_btn = QPushButton("Automatisch prüfen & einrichten")
+        self.auto_setup_btn = QPushButton(self.t("tts_setup_btn_auto", "Automatisch prüfen & einrichten"))
         self.auto_setup_btn.setObjectName("AccentButton")
         self.auto_setup_btn.clicked.connect(lambda: self.start_action("auto_setup"))
-        self.start_btn = QPushButton("Server starten")
+        self.download_voices_btn = QPushButton(self.t("tts_setup_btn_download_voices", "Additional voices …"))
+        self.download_voices_btn.clicked.connect(lambda: self.start_action("download_voices"))
+        self.start_btn = QPushButton(self.t("tts_setup_btn_start", "Server starten"))
         self.start_btn.clicked.connect(lambda: self.start_action("start"))
-        self.stop_btn = QPushButton("Server stoppen")
+        self.stop_btn = QPushButton(self.t("tts_setup_btn_stop", "Server stoppen"))
         self.stop_btn.clicked.connect(lambda: self.start_action("stop"))
         button_row.addWidget(self.auto_setup_btn)
+        button_row.addWidget(self.download_voices_btn)
         button_row.addWidget(self.start_btn)
         button_row.addWidget(self.stop_btn)
         root.addLayout(button_row)
 
         path_row = QHBoxLayout()
-        self.open_folder_btn = QPushButton("TTS-Ordner öffnen")
+        self.open_folder_btn = QPushButton(self.t("tts_setup_btn_open_folder", "TTS-Ordner öffnen"))
         self.open_folder_btn.clicked.connect(self.open_tts_folder)
-        self.open_log_btn = QPushButton("Log öffnen")
+        self.open_log_btn = QPushButton(self.t("tts_setup_btn_open_log", "Log öffnen"))
         self.open_log_btn.clicked.connect(self.open_log_file)
         path_row.addWidget(self.open_folder_btn)
         path_row.addWidget(self.open_log_btn)
@@ -955,59 +985,127 @@ class TTSSetupDialog(QDialog):
 
         self.log_box = QPlainTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setPlaceholderText("Hier erscheinen Status- und Setup-Meldungen …")
+        self.log_box.setPlaceholderText(self.t("tts_setup_log_placeholder", "Hier erscheinen Status- und Setup-Meldungen …"))
         root.addWidget(self.log_box, 1)
 
         close_row = QHBoxLayout()
         close_row.addStretch()
-        close_btn = QPushButton("Schließen")
+        close_btn = QPushButton(self.t("tts_setup_close", "Schließen"))
         close_btn.clicked.connect(self.accept)
         close_row.addWidget(close_btn)
         root.addLayout(close_row)
 
         self.refresh_status()
 
+    def t(self, key: str, default: Optional[str] = None) -> str:
+        return self.translations.get(key, default or key)
+
     def manager(self) -> VibeVoiceManager:
-        return VibeVoiceManager(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"))
+        return VibeVoiceManager(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), self.t)
 
     def append_log(self, text: str) -> None:
         self.log_box.appendPlainText(text)
+        self._update_progress_from_log(text)
         bar = self.log_box.verticalScrollBar()
         bar.setValue(bar.maximum())
 
     def refresh_status(self) -> None:
         status = self.manager().status()
+        yes = self.t("yes", "ja")
+        no = self.t("no", "nein")
+        health_text = self.t("ok", "OK") if status.health_ok else self.t("not_reachable", "nicht erreichbar")
         lines = [
-            f"Backend-URL: {status.base_url}",
-            f"Health: {'OK' if status.health_ok else 'nicht erreichbar'}",
-            f"ffmpeg in PATH: {'ja' if status.ffmpeg_found else 'nein'}",
-            f"Wrapper-Dateien vorhanden: {'ja' if status.repo_present else 'nein'}",
-            f"Wrapper-venv vorhanden: {'ja' if status.venv_present else 'nein'}",
-            f"PID-Datei/Prozess aktiv: {'ja' if status.pid_running else 'nein'}",
-            f"Repo-Ordner: {status.repo_dir}",
-            f"Modelle-Ordner: {status.models_dir}",
-            f"Logdatei: {status.log_path}",
+            self.t("tts_setup_status_backend", "Backend-URL: {value}").format(value=status.base_url),
+            self.t("tts_setup_status_health", "Health: {value}").format(value=health_text),
+            self.t("tts_setup_status_ffmpeg", "ffmpeg in PATH: {value}").format(value=yes if status.ffmpeg_found else no),
+            self.t("tts_setup_status_repo", "Wrapper-Dateien vorhanden: {value}").format(value=yes if status.repo_present else no),
+            self.t("tts_setup_status_venv", "Wrapper-venv vorhanden: {value}").format(value=yes if status.venv_present else no),
+            self.t("tts_setup_status_pid", "PID-Datei/Prozess aktiv: {value}").format(value=yes if status.pid_running else no),
+            self.t("tts_setup_status_repo_dir", "Repo-Ordner: {value}").format(value=status.repo_dir),
+            self.t("tts_setup_status_models_dir", "Modelle-Ordner: {value}").format(value=status.models_dir),
+            self.t("tts_setup_status_log", "Logdatei: {value}").format(value=status.log_path),
         ]
         if status.health_ok:
-            lines.append(f"Health-Antwort: {status.health_message}")
+            lines.append(self.t("tts_setup_status_health_reply", "Health-Antwort: {value}").format(value=status.health_message))
         else:
-            lines.append(f"Letzter Health-Fehler: {status.health_message}")
+            lines.append(self.t("tts_setup_status_health_error", "Letzter Health-Fehler: {value}").format(value=status.health_message))
         self.status_label.setText("\n".join(lines))
 
+    def _set_progress(self, value: int, step_text: Optional[str] = None) -> None:
+        value = max(0, min(100, value))
+        if value < self.progress_bar.value() and self.worker_thread is not None:
+            value = self.progress_bar.value()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(value)
+        if step_text:
+            self.current_step_label.setText(self.t("tts_setup_current_step", "Aktueller Schritt: {step}").format(step=step_text))
+
+    def _update_progress_from_log(self, text: str) -> None:
+        lower = text.lower()
+        percent_match = re.search(r"(\d{1,3})%", text)
+        if "backend-url" in lower or "backend url" in lower or lower.startswith("health:"):
+            self._set_progress(8, self.t("tts_setup_progress_checking", "Status wird geprüft …"))
+        if "ffmpeg" in lower:
+            self._set_progress(max(self.progress_bar.value(), 15), self.t("tts_setup_progress_ffmpeg", "FFmpeg wird geprüft …"))
+        if "download" in lower or "wrapper archive" in lower or "wrapper-archiv" in lower:
+            if percent_match:
+                pct = int(percent_match.group(1))
+                self._set_progress(20 + int(pct * 0.30), self.t("tts_setup_progress_download", "Wrapper-Archiv wird heruntergeladen …"))
+            else:
+                self._set_progress(max(self.progress_bar.value(), 20), self.t("tts_setup_progress_download", "Wrapper-Archiv wird heruntergeladen …"))
+        if "voice preset" in lower or "voice presets" in lower or "stimmenpaket" in lower or "zusätzliche stimmen" in lower:
+            if percent_match:
+                pct = int(percent_match.group(1))
+                self._set_progress(max(self.progress_bar.value(), 86 + int(pct * 0.10)), self.t("tts_setup_progress_voices", "Zusätzliche Stimmen werden heruntergeladen …"))
+            else:
+                self._set_progress(max(self.progress_bar.value(), 86), self.t("tts_setup_progress_voices", "Zusätzliche Stimmen werden heruntergeladen …"))
+        if "entpack" in lower or "extract" in lower:
+            self._set_progress(max(self.progress_bar.value(), 58), self.t("tts_setup_progress_extract", "Archiv wird entpackt …"))
+        if "venv" in lower:
+            self._set_progress(max(self.progress_bar.value(), 70), self.t("tts_setup_progress_venv", "Python-Umgebung wird vorbereitet …"))
+        if "requirements" in lower or "pip" in lower or "abhängigkeiten" in lower or "dependencies" in lower:
+            self._set_progress(max(self.progress_bar.value(), 82), self.t("tts_setup_progress_requirements", "Abhängigkeiten werden installiert …"))
+        if "starte lokalen tts-server" in lower or "starting local tts server" in lower or "prozess gestartet" in lower or "process started" in lower:
+            self._set_progress(max(self.progress_bar.value(), 92), self.t("tts_setup_progress_starting", "Server wird gestartet …"))
+        if "beende tts-server" in lower or "stopping tts server" in lower:
+            self._set_progress(max(self.progress_bar.value(), 92), self.t("tts_setup_progress_stopping", "Server wird gestoppt …"))
+        if "abgeschlossen" in lower or "finished" in lower or "antwortet bereits" in lower or "responded after" in lower:
+            self._set_progress(100, self.t("tts_setup_progress_finalizing", "Abschluss …"))
+
+    def _tick_elapsed(self) -> None:
+        self._elapsed_seconds += 1
+        self.elapsed_label.setText(self.t("tts_setup_elapsed", "Verstrichen: {seconds} s").format(seconds=self._elapsed_seconds))
+
     def set_busy(self, busy: bool) -> None:
-        for btn in [self.auto_setup_btn, self.start_btn, self.stop_btn, self.open_folder_btn, self.open_log_btn]:
+        for btn in [self.auto_setup_btn, self.download_voices_btn, self.start_btn, self.stop_btn, self.open_folder_btn, self.open_log_btn]:
             btn.setEnabled(not busy)
+        if busy:
+            self._elapsed_seconds = 0
+            self.elapsed_label.setText(self.t("tts_setup_elapsed", "Verstrichen: {seconds} s").format(seconds=0))
+            self.elapsed_timer.start()
+            self.progress_bar.setValue(3)
+        else:
+            self.elapsed_timer.stop()
 
     def start_action(self, action: str) -> None:
         if self.worker_thread is not None:
-            QMessageBox.information(self, "Bitte warten", "Es läuft bereits eine TTS-Setup-Aktion.")
+            QMessageBox.information(self, self.t("tts_setup_running_title", "Bitte warten"), self.t("tts_setup_running_text", "Es läuft bereits eine TTS-Setup-Aktion."))
             return
+        action_name = {
+            "auto_setup": self.t("tts_setup_action_auto", "Automatisches Setup"),
+            "start": self.t("tts_setup_action_start", "Serverstart"),
+            "stop": self.t("tts_setup_action_stop", "Server stoppen"),
+            "install": self.t("tts_setup_action_install", "Installieren / Aktualisieren"),
+            "download_voices": self.t("tts_setup_action_download_voices", "Additional voice presets"),
+        }.get(action, action)
         self.append_log("")
-        self.append_log(f"=== Aktion: {action} ===")
+        self.append_log(self.t("tts_setup_action_header", "=== Aktion: {action} ===").format(action=action_name))
+        self.current_step_label.setText(self.t("tts_setup_current_step", "Aktueller Schritt: {step}").format(step=action_name))
+        self.progress_bar.setValue(5)
         self.set_busy(True)
 
         self.worker_thread = QThread(self)
-        self.worker = TTSActionWorker(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), action)
+        self.worker = TTSActionWorker(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), action, self.translations)
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.started.connect(self.worker.run)
         self.worker.log.connect(self.append_log)
@@ -1020,11 +1118,12 @@ class TTSSetupDialog(QDialog):
         self.append_log(message)
         self.refresh_status()
         self.set_busy(False)
+        self.progress_bar.setValue(100 if success else max(self.progress_bar.value(), 1))
         if success:
             self.parent().statusBar().showMessage(message, 4000) if self.parent() and hasattr(self.parent(), 'statusBar') else None
         else:
             self.parent().statusBar().showMessage(message, 6000) if self.parent() and hasattr(self.parent(), 'statusBar') else None
-            QMessageBox.information(self, "TTS-Setup", message)
+            QMessageBox.information(self, self.t("tts_setup_message_title", "TTS-Setup"), message)
 
     def cleanup_worker(self) -> None:
         if self.worker is not None:
@@ -1044,7 +1143,7 @@ class TTSSetupDialog(QDialog):
         if log_path.exists():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_path)))
         else:
-            QMessageBox.information(self, "Noch kein Log", "Die Logdatei existiert noch nicht. Starte den Server einmal, dann wird sie angelegt.")
+            QMessageBox.information(self, self.t("tts_setup_no_log_title", "Noch kein Log"), self.t("tts_setup_no_log_text", "Die Logdatei existiert noch nicht. Starte den Server einmal, dann wird sie angelegt."))
 
 
 class MainWindow(QMainWindow):
