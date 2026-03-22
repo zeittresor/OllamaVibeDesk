@@ -21,6 +21,7 @@ EXPORTS_DIR = APP_DATA_DIR / "exports"
 TTS_DIR = APP_DATA_DIR / "tts"
 LANG_DIR = APP_ROOT / "lang"
 SAPI_LEXICON_PATH = TTS_DIR / "sapi_lexicon.json"
+AUTO_ANSWER_PATH = APP_DATA_DIR / "auto_answer_phrases.json"
 CONFIG_PATH = APP_DATA_DIR / "config.json"
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -42,6 +43,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "theme": "Midnight",
     "last_model": "",
     "system_prompt": "",
+    "auto_answer_enabled": False,
+    "read_all_include_names": False,
+    "user_display_name": "",
+    "assistant_display_name": "",
 }
 
 
@@ -139,6 +144,56 @@ def ensure_default_sapi_lexicon() -> None:
     )
 
 
+
+def ensure_default_auto_answer_phrases() -> None:
+    if AUTO_ANSWER_PATH.exists():
+        return
+
+    default_data = {
+        "enabled": True,
+        "phrases": {
+            "de": [
+                "und hättest du konkrete verbesserungsvorschläge",
+                "und bezogen auf die aktuellen krisen auf der welt wie beurteilst du das",
+                "unglaublich, das ist ja heftig",
+                "kannst du das noch etwas weiter ausführen",
+                "welche folgen könnte das langfristig haben"
+            ],
+            "en": [
+                "and would you have concrete suggestions for improvement",
+                "and in light of the current crises in the world, how do you see that",
+                "wow, that is intense",
+                "could you expand on that a bit more",
+                "what long-term consequences could that have"
+            ],
+            "fr": [
+                "et aurais-tu des propositions d'amélioration concrètes",
+                "et par rapport aux crises actuelles dans le monde, comment vois-tu cela",
+                "incroyable, c'est intense",
+                "peux-tu développer un peu plus",
+                "quelles conséquences cela pourrait-il avoir à long terme"
+            ],
+            "es": [
+                "y tendrías propuestas concretas de mejora",
+                "y respecto a las crisis actuales del mundo, cómo lo valoras",
+                "increíble, eso es fuerte",
+                "podrías profundizar un poco más",
+                "qué consecuencias podría tener a largo plazo"
+            ],
+            "ru": [
+                "и какие конкретные улучшения ты бы предложил",
+                "а если учитывать текущие мировые кризисы, как ты это оцениваешь",
+                "невероятно, это сильно",
+                "можешь раскрыть это чуть подробнее",
+                "к каким долгосрочным последствиям это может привести"
+            ]
+        }
+    }
+    AUTO_ANSWER_PATH.write_text(
+        json.dumps(default_data, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
 def ensure_directories() -> None:
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     CHATS_DIR.mkdir(parents=True, exist_ok=True)
@@ -148,6 +203,7 @@ def ensure_directories() -> None:
     TTS_DIR.mkdir(parents=True, exist_ok=True)
     LANG_DIR.mkdir(parents=True, exist_ok=True)
     ensure_default_sapi_lexicon()
+    ensure_default_auto_answer_phrases()
 
 
 def load_config() -> Dict[str, Any]:

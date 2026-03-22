@@ -9,6 +9,7 @@ import sys
 import traceback
 import uuid
 import threading
+import random
 from datetime import datetime
 from time import monotonic
 from pathlib import Path
@@ -48,7 +49,7 @@ from PyQt6.QtWidgets import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, SAPI_LEXICON_PATH, load_config, save_config, ensure_directories
+from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, load_config, save_config, ensure_directories
 from app.models import ChatMessage, ChatSession
 from app.ollama_client import OllamaClient
 from app.themes import THEMES
@@ -210,6 +211,139 @@ def message_content_to_html(text: str, is_assistant: bool) -> str:
     </style>
     """
     return css + html_text
+
+
+def load_auto_answer_data() -> dict:
+    ensure_directories()
+    try:
+        return json.loads(AUTO_ANSWER_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"enabled": True, "phrases": {"de": []}}
+
+
+def default_role_names(language_code: str) -> tuple[str, str]:
+    code = (language_code or "de").lower()
+    mapping = {
+        "de": ("Du", "Assistent"),
+        "en": ("You", "Assistant"),
+        "fr": ("Vous", "Assistant"),
+        "es": ("Tú", "Asistente"),
+        "ru": ("Вы", "Ассистент"),
+    }
+    return mapping.get(code, mapping["en"])
+
+
+def resolve_display_name(config: dict, role: str) -> str:
+    user_default, assistant_default = default_role_names(config.get("interface_language", "de"))
+    if role == "assistant":
+        return (config.get("assistant_display_name", "") or "").strip() or assistant_default
+    return (config.get("user_display_name", "") or "").strip() or user_default
+
+
+def _reflect_fragment_de(fragment: str) -> str:
+    replacements = [
+        (r"\bdeine\b", "meine"),
+        (r"\bdein\b", "mein"),
+        (r"\bdeiner\b", "meiner"),
+        (r"\bdeinem\b", "meinem"),
+        (r"\bdeinen\b", "meinen"),
+        (r"\bdu\b", "ich"),
+        (r"\bdich\b", "mich"),
+        (r"\bdir\b", "mir"),
+        (r"\bich\b", "du"),
+        (r"\bmir\b", "dir"),
+        (r"\bmich\b", "dich"),
+        (r"\bmein\b", "dein"),
+        (r"\bmeine\b", "deine"),
+    ]
+    out = fragment
+    for pattern, repl in replacements:
+        out = re.sub(pattern, repl, out, flags=re.IGNORECASE)
+    return out
+
+
+def _reflect_fragment_en(fragment: str) -> str:
+    replacements = [
+        (r"\byour\b", "my"),
+        (r"\byours\b", "mine"),
+        (r"\byou\b", "I"),
+        (r"\byourself\b", "myself"),
+        (r"\bme\b", "you"),
+        (r"\bmy\b", "your"),
+        (r"\bmine\b", "yours"),
+        (r"\bi\b", "you"),
+    ]
+    out = fragment
+    for pattern, repl in replacements:
+        out = re.sub(pattern, repl, out, flags=re.IGNORECASE)
+    return out
+
+
+def generate_auto_answer(source_text: str, language_code: str, phrase_data: dict | None = None) -> str:
+    cleaned = markdown_to_tts_text(source_text or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        cleaned = "das" if (language_code or "de").startswith("de") else "that"
+    fragment = cleaned[:180].strip(" .!?…:;,-") or cleaned[:180]
+    code = (language_code or "de").lower()
+    phrases = []
+    if isinstance(phrase_data, dict):
+        phrases_map = phrase_data.get("phrases")
+        if isinstance(phrases_map, dict):
+            phrases = [str(x).strip() for x in phrases_map.get(code, []) if str(x).strip()]
+            if not phrases and code != "en":
+                phrases = [str(x).strip() for x in phrases_map.get("en", []) if str(x).strip()]
+
+    if code.startswith("de"):
+        reflected = _reflect_fragment_de(fragment)
+        templates = [
+            f"Das ist interessant. Erzähl bitte weiter.",
+            f"Warum denkst du {reflected}?",
+            f"Hast du dabei Bedenken?",
+            f"Und wie betrachtest du das kritisch?",
+            f"Interessant — wie könnte sich das noch entwickeln?",
+        ]
+    elif code.startswith("fr"):
+        reflected = fragment
+        templates = [
+            "C'est intéressant. Continue, s'il te plaît.",
+            f"Pourquoi penses-tu {reflected} ?",
+            "As-tu des réserves à ce sujet ?",
+            "Et comment le considérerais-tu de manière critique ?",
+            "Intéressant — comment cela pourrait-il encore évoluer ?",
+        ]
+    elif code.startswith("es"):
+        reflected = fragment
+        templates = [
+            "Eso es interesante. Sigue, por favor.",
+            f"¿Por qué piensas {reflected}?",
+            "¿Tienes dudas al respecto?",
+            "¿Y cómo lo valorarías de manera crítica?",
+            "Interesante — ¿cómo crees que podría evolucionar?",
+        ]
+    elif code.startswith("ru"):
+        reflected = fragment
+        templates = [
+            "Это интересно. Расскажи дальше.",
+            f"Почему ты так думаешь: {reflected}?",
+            "Есть ли у тебя опасения по этому поводу?",
+            "А как ты смотришь на это критически?",
+            "Интересно — как, по-твоему, это может развиваться дальше?",
+        ]
+    else:
+        reflected = _reflect_fragment_en(fragment)
+        templates = [
+            "That is interesting. Please tell me more.",
+            f"Why do you think {reflected}?",
+            "Do you have concerns about that?",
+            "And how do you look at that critically?",
+            "Interesting — how do you think this might develop further?",
+        ]
+
+    candidates = [t for t in templates if t.strip()]
+    if phrases:
+        candidates.extend(phrases)
+    return random.choice(candidates).strip()
 
 
 def pretty_timestamp(value: str) -> str:
@@ -598,6 +732,86 @@ class LexiconEditorDialog(QDialog):
         self.accept()
 
 
+
+
+class AutoAnswerPhrasesDialog(QDialog):
+    def __init__(self, language_code: str = "de", parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.translations = load_language_pack(language_code)
+        self.setWindowTitle(self.t("auto_answer_editor_title", "Automatische Antwortsätze bearbeiten"))
+        self.setModal(True)
+        self.resize(760, 560)
+
+        layout = QVBoxLayout(self)
+        info = QLabel(self.t("auto_answer_editor_info", "Die JSON-Datei wird direkt aus dem App-Ordner geladen. Unter 'phrases' können pro Sprache zusätzliche Sätze hinterlegt werden, die ergänzend zum ELIZA-Modus verwendet werden."))
+        info.setWordWrap(True)
+        info.setObjectName("SubtleLabel")
+        layout.addWidget(info)
+
+        self.editor = QPlainTextEdit()
+        self.editor.setPlaceholderText("""{
+  "enabled": true,
+  "phrases": {
+    "de": ["und hättest du konkrete verbesserungsvorschläge"],
+    "en": ["and would you have concrete suggestions for improvement"]
+  }
+}""")
+        layout.addWidget(self.editor, 1)
+
+        buttons = QHBoxLayout()
+        self.reset_btn = QPushButton(self.t("reset_default", "Standard wiederherstellen"))
+        self.reset_btn.clicked.connect(self.reset_to_default)
+        buttons.addWidget(self.reset_btn)
+        buttons.addStretch()
+
+        cancel_btn = QPushButton(self.t("cancel", "Abbrechen"))
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton(self.t("save", "Speichern"))
+        save_btn.setObjectName("AccentButton")
+        save_btn.clicked.connect(self.save_and_accept)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(save_btn)
+        layout.addLayout(buttons)
+        self.load_current()
+
+    def t(self, key: str, default: Optional[str] = None) -> str:
+        return self.translations.get(key, default or key)
+
+    def load_current(self) -> None:
+        ensure_directories()
+        self.editor.setPlainText(AUTO_ANSWER_PATH.read_text(encoding="utf-8"))
+
+    def reset_to_default(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            self.t("reset_confirm_title", "Standard wiederherstellen"),
+            self.t("reset_confirm_text", "Soll das Aussprache-Lexikon auf die Standardwerte zurückgesetzt werden?")
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if AUTO_ANSWER_PATH.exists():
+            AUTO_ANSWER_PATH.unlink()
+        ensure_directories()
+        self.load_current()
+
+    def save_and_accept(self) -> None:
+        raw = self.editor.toPlainText().strip()
+        if not raw:
+            QMessageBox.warning(self, self.t("empty_auto_answer_title", "Leere Datei"), self.t("empty_auto_answer_text", "Die JSON-Datei darf nicht leer sein."))
+            return
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            QMessageBox.critical(self, self.t("invalid_json_title", "Ungültiges JSON"), self.t("invalid_json_text", "Die Datei ist kein gültiges JSON.\n\n{error}").format(error=exc))
+            return
+        if not isinstance(data, dict):
+            QMessageBox.critical(self, self.t("invalid_format_title", "Ungültiges Format"), self.t("invalid_format_root", "Die oberste Ebene der Datei muss ein JSON-Objekt sein."))
+            return
+        ensure_directories()
+        AUTO_ANSWER_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.accept()
+
+
 class SettingsDialog(QDialog):
     def __init__(self, config: dict, parent: Optional[QWidget] = None, open_tts_setup_callback: Optional[Callable[[], None]] = None) -> None:
         super().__init__(parent)
@@ -642,6 +856,7 @@ class SettingsDialog(QDialog):
         idx_lang = max(0, self.interface_language.findData(current_lang))
         self.interface_language.setCurrentIndex(idx_lang)
         add_row(self.t("interface_language_label", "Sprache der Oberfläche"), self.interface_language)
+        self.interface_language.currentIndexChanged.connect(self._refresh_name_placeholders)
 
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(sorted(THEMES.keys()))
@@ -689,6 +904,29 @@ class SettingsDialog(QDialog):
         self.auto_read_responses.setChecked(bool(self.config.get("auto_read_assistant_responses", True)))
         self.auto_read_responses.setToolTip(self.t("auto_read_tooltip", "Wenn aktiv, wird nach jeder neuen Assistent-Antwort automatisch TTS erzeugt und abgespielt."))
         self.content_layout.addWidget(self.auto_read_responses)
+
+        self.read_all_include_names = QCheckBox(self.t("read_all_include_names_label", "Bei 'Alles vorlesen' Sprecher-Namen mit vorlesen"))
+        self.read_all_include_names.setChecked(bool(self.config.get("read_all_include_names", False)))
+        self.content_layout.addWidget(self.read_all_include_names)
+
+        user_default_name, assistant_default_name = default_role_names(self.config.get("interface_language", "de"))
+        self.user_display_name = QLineEdit((self.config.get("user_display_name", "") or "").strip())
+        self.user_display_name.setPlaceholderText(user_default_name)
+        add_row(self.t("user_display_name_label", "Anzeigename für dich"), self.user_display_name)
+
+        self.assistant_display_name = QLineEdit((self.config.get("assistant_display_name", "") or "").strip())
+        self.assistant_display_name.setPlaceholderText(assistant_default_name)
+        add_row(self.t("assistant_display_name_label", "Anzeigename für den Assistenten"), self.assistant_display_name)
+
+        auto_answer_row = QHBoxLayout()
+        auto_answer_info = QLabel(self.t("auto_answer_settings_hint", "Bearbeite zusätzliche automatische Antwortsätze für den ELIZA-Modus."))
+        auto_answer_info.setObjectName("SubtleLabel")
+        auto_answer_info.setWordWrap(True)
+        auto_answer_row.addWidget(auto_answer_info, 1)
+        self.edit_auto_answer_btn = QPushButton(self.t("edit_auto_answer_phrases", "Auto-Answer-Sätze bearbeiten …"))
+        self.edit_auto_answer_btn.clicked.connect(self.edit_auto_answer_phrases)
+        auto_answer_row.addWidget(self.edit_auto_answer_btn)
+        self.content_layout.addLayout(auto_answer_row)
 
         lexicon_row = QHBoxLayout()
         self.tts_lexicon = QCheckBox(self.t("tts_lexicon_label", "TTS Aussprache-Lexikon verwenden"))
@@ -894,6 +1132,16 @@ class SettingsDialog(QDialog):
         dialog = LexiconEditorDialog(self.config.get("interface_language", "de"), self)
         dialog.exec()
 
+    def edit_auto_answer_phrases(self) -> None:
+        dialog = AutoAnswerPhrasesDialog(self.config.get("interface_language", "de"), self)
+        dialog.exec()
+
+    def _refresh_name_placeholders(self) -> None:
+        lang = (self.interface_language.currentData() or self.config.get("interface_language", "de") or "de").strip()
+        user_default, assistant_default = default_role_names(lang)
+        self.user_display_name.setPlaceholderText(user_default)
+        self.assistant_display_name.setPlaceholderText(assistant_default)
+
     def get_config(self) -> dict:
         data = self.config.copy()
         data["interface_language"] = (self.interface_language.currentData() or "de").strip()
@@ -913,6 +1161,9 @@ class SettingsDialog(QDialog):
         data["tts_model"] = self.tts_model.text().strip() or "tts-1-hd"
         data["autoplay_tts"] = self.autoplay.isChecked()
         data["auto_read_assistant_responses"] = self.auto_read_responses.isChecked()
+        data["read_all_include_names"] = self.read_all_include_names.isChecked()
+        data["user_display_name"] = self.user_display_name.text().strip()
+        data["assistant_display_name"] = self.assistant_display_name.text().strip()
         data["tts_lexicon_enabled"] = self.tts_lexicon.isChecked()
         data["windows_sapi_lexicon_enabled"] = data["tts_lexicon_enabled"]
         data["windows_sapi_rate"] = int(self.sapi_rate_slider.value())
@@ -1218,10 +1469,16 @@ class MainWindow(QMainWindow):
         self.audio_generation_id = 0
         self.audio_playback_thread: Optional[threading.Thread] = None
         self.last_requested_model = (self.config.get("last_model", "") or "").strip()
+        self.pending_auto_answer_source = ""
+        self.pending_auto_submit_message: Optional[ChatMessage] = None
+        self.auto_answer_waiting_for_user_audio = False
 
         self.setWindowTitle(self.t("app_title", "OllamaVibeDesk"))
         self.audio_error_signal.connect(self._on_audio_error)
         self.audio_status_signal.connect(self._on_audio_status)
+        self.auto_answer_timer = QTimer(self)
+        self.auto_answer_timer.setSingleShot(True)
+        self.auto_answer_timer.timeout.connect(self._on_auto_answer_timer)
         self.resize(1420, 920)
         self.setMinimumSize(QSize(1180, 720))
         self.apply_theme(self.config.get("theme", "Midnight"))
@@ -1381,7 +1638,13 @@ class MainWindow(QMainWindow):
         self.input_box = QPlainTextEdit()
         self.input_box.setPlaceholderText(self.t("composer_placeholder", "Nachricht schreiben …  (Strg+Enter zum Senden)"))
         self.input_box.setFixedHeight(120)
+        self.input_box.textChanged.connect(self._on_input_text_changed)
         layout.addWidget(self.input_box)
+
+        self.auto_answer_checkbox = QCheckBox(self.t("auto_answer_checkbox", "Auto Answer (ELIZA)"))
+        self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
+        self.auto_answer_checkbox.toggled.connect(self._on_auto_answer_toggled)
+        layout.addWidget(self.auto_answer_checkbox)
 
         buttons = QHBoxLayout()
         self.composer_hint = QLabel(self.t("composer_hint", "Ollama wird lokal angesprochen. Antworten werden gestreamt."))
@@ -1420,6 +1683,7 @@ class MainWindow(QMainWindow):
         self.composer_hint.setText(self.t("composer_hint", "Ollama wird lokal angesprochen. Antworten werden gestreamt."))
         self.stop_btn.setText(self.t("stop_button", "Stop"))
         self.send_btn.setText(self.t("send_button", "Senden"))
+        self.auto_answer_checkbox.setText(self.t("auto_answer_checkbox", "Auto Answer (ELIZA)"))
         current_session_id = self.current_session.session_id if self.current_session else None
         if current_session_id:
             self.open_session(current_session_id)
@@ -1568,28 +1832,38 @@ class MainWindow(QMainWindow):
             if item.role in {"user", "assistant"}
         ]
 
-    def send_message(self) -> None:
-        text = self.input_box.toPlainText().strip()
-        if not text:
-            return
-        if self.worker_thread is not None:
-            QMessageBox.warning(self, self.t("already_running_title", "Läuft bereits"), self.t("already_running_message", "Es läuft bereits eine Antwortgenerierung."))
-            return
+    def _on_input_text_changed(self) -> None:
+        if self.input_box.toPlainText().strip() and self.auto_answer_timer.isActive():
+            self.auto_answer_timer.stop()
+            self.pending_auto_answer_source = ""
+
+    def _on_auto_answer_toggled(self, checked: bool) -> None:
+        self.config["auto_answer_enabled"] = bool(checked)
+        save_config(self.config)
+        if not checked:
+            self.auto_answer_timer.stop()
+            self.pending_auto_answer_source = ""
+            self.pending_auto_submit_message = None
+            self.auto_answer_waiting_for_user_audio = False
+            self.statusBar().showMessage(self.t("auto_answer_disabled", "Auto Answer deaktiviert."), 2500)
+        else:
+            self.statusBar().showMessage(self.t("auto_answer_enabled", "Auto Answer aktiviert."), 2500)
+
+    def _append_user_message(self, text: str) -> ChatMessage:
         if not self.current_session:
             self.create_new_session()
-
         user_message = ChatMessage.now("user", text)
         self.current_session.messages.append(user_message)
-        self.input_box.clear()
-
         if self.current_session.title == self.t("new_conversation", "Neue Unterhaltung"):
             self.current_session.title = text[:48] + ("…" if len(text) > 48 else "")
         self.current_session.model_name = self.model_combo.currentText().strip()
         self.store.save(self.current_session)
         self.refresh_sessions_ui()
-
         self.add_message_bubble(user_message)
+        self.scroll_to_bottom()
+        return user_message
 
+    def _begin_assistant_request(self) -> None:
         selected_model = self.model_combo.currentText().strip()
         previous_model = (self.last_requested_model or "").strip()
         assistant_message = ChatMessage.now("assistant", "")
@@ -1602,9 +1876,58 @@ class MainWindow(QMainWindow):
 
         messages = self.session_messages_for_api()[:-1]
         self.start_worker(messages)
-
         self.stop_btn.setEnabled(True)
         self.scroll_to_bottom()
+
+    def _schedule_auto_answer(self, source_text: str) -> None:
+        if not self.auto_answer_checkbox.isChecked():
+            return
+        if self.worker_thread is not None:
+            return
+        if self.input_box.toPlainText().strip():
+            return
+        self.pending_auto_answer_source = source_text or ""
+        self.auto_answer_timer.start(1200)
+        self.statusBar().showMessage(self.t("auto_answer_scheduled", "Automatische Antwort wird vorbereitet …"), 2000)
+
+    def _on_auto_answer_timer(self) -> None:
+        if not self.auto_answer_checkbox.isChecked():
+            return
+        if self.worker_thread is not None:
+            return
+        if self.input_box.toPlainText().strip():
+            return
+        phrase_data = load_auto_answer_data()
+        if isinstance(phrase_data, dict) and phrase_data.get("enabled", True) is False:
+            return
+        auto_text = generate_auto_answer(self.pending_auto_answer_source, self.config.get("interface_language", "de"), phrase_data)
+        if not auto_text:
+            return
+        self.pending_auto_answer_source = ""
+        message = self._append_user_message(auto_text)
+        self.pending_auto_submit_message = message
+        self.auto_answer_waiting_for_user_audio = True
+        if self.config.get("tts_backend", "disabled") == "disabled":
+            self.auto_answer_waiting_for_user_audio = False
+            self.pending_auto_submit_message = None
+            self._begin_assistant_request()
+            return
+        self.read_aloud_message(message, show_disabled_message=False, allow_autoplay=True)
+
+    def send_message(self) -> None:
+        text = self.input_box.toPlainText().strip()
+        if not text:
+            return
+        if self.worker_thread is not None:
+            QMessageBox.warning(self, self.t("already_running_title", "Läuft bereits"), self.t("already_running_message", "Es läuft bereits eine Antwortgenerierung."))
+            return
+        self.auto_answer_timer.stop()
+        self.pending_auto_answer_source = ""
+        self.pending_auto_submit_message = None
+        self.auto_answer_waiting_for_user_audio = False
+        self.input_box.clear()
+        self._append_user_message(text)
+        self._begin_assistant_request()
 
     def start_worker(self, messages: List[dict]) -> None:
         self.worker_thread = QThread(self)
@@ -1643,12 +1966,22 @@ class MainWindow(QMainWindow):
             assistant_message = self.current_session.messages[-1]
             self.store.save(self.current_session)
             self.refresh_sessions_ui()
-        if assistant_message is not None and self.config.get("auto_read_assistant_responses", True):
+        auto_read = assistant_message is not None and self.config.get("auto_read_assistant_responses", True) and self.config.get("tts_backend", "disabled") != "disabled"
+        if assistant_message is not None and auto_read:
             self.read_aloud_message(assistant_message, show_disabled_message=False, allow_autoplay=True)
+        if self.auto_answer_checkbox.isChecked() and not self.input_box.toPlainText().strip():
+            if auto_read:
+                self.pending_auto_answer_source = final_text
+            else:
+                self._schedule_auto_answer(final_text)
         self.statusBar().showMessage(self.t("answer_finished", "Antwort abgeschlossen."), 2500)
 
     def on_worker_failed(self, message: str) -> None:
         self.stop_btn.setEnabled(False)
+        self.auto_answer_timer.stop()
+        self.pending_auto_answer_source = ""
+        self.pending_auto_submit_message = None
+        self.auto_answer_waiting_for_user_audio = False
         if self.current_assistant_bubble is not None:
             error_text = f"Fehler bei der Ollama-Anfrage:\n\n{message}"
             self.current_assistant_bubble.set_content(error_text)
@@ -1656,6 +1989,7 @@ class MainWindow(QMainWindow):
             self.current_session.messages[-1].content = f"Fehler bei der Ollama-Anfrage:\n\n{message}"
             self.store.save(self.current_session)
         self.statusBar().showMessage(self.t("ollama_failed", "Ollama-Anfrage fehlgeschlagen."), 4000)
+
 
     def cleanup_worker(self) -> None:
         if self.worker is not None:
@@ -1691,14 +2025,17 @@ class MainWindow(QMainWindow):
         segments: List[dict] = []
         if not self.current_session:
             return segments
+        include_names = bool(self.config.get("read_all_include_names", False))
         for message in self.current_session.messages:
             text = self._prepare_tts_text(message)
             if not text:
                 continue
-            prefix = self.t("tts_role_user_prefix", "Du:") if message.role == "user" else self.t("tts_role_assistant_prefix", "Assistent:")
+            if include_names:
+                speaker = resolve_display_name(self.config, message.role)
+                text = f"{speaker}: {text}".strip()
             segments.append({
                 "role": message.role,
-                "text": f"{prefix} {text}".strip(),
+                "text": text,
                 "voice": self._tts_voice_for_message(message),
             })
         return segments
@@ -1954,7 +2291,7 @@ class MainWindow(QMainWindow):
         ]
         body_parts.append(f"<div class='cover'><div class='title'>{html.escape(self.current_session.title)}</div><div class='meta'>{html.escape(self.t('model_label', 'Modell'))}: {html.escape(self.current_session.model_name or self.model_combo.currentText().strip())}<br>{html.escape(self.t('export_pdf_created', 'Exportiert am'))}: {html.escape(pretty_timestamp(datetime.now().isoformat(timespec='seconds')))}</div></div>")
         for message in self.current_session.messages:
-            role_label = self.t('assistant_label', 'Assistent') if message.role == 'assistant' else self.t('you_label', 'Du')
+            role_label = resolve_display_name(self.config, message.role)
             msg_class = 'assistant' if message.role == 'assistant' else 'user'
             rendered = markdown.markdown(message.content if message.role == 'assistant' else html.escape(message.content), extensions=['fenced_code', 'tables'])
             body_parts.append(f"<div class='msg {msg_class}'><div class='msgmeta'>{html.escape(role_label)} · {html.escape(pretty_timestamp(message.created_at))}</div>{rendered}</div>")
@@ -1973,14 +2310,36 @@ class MainWindow(QMainWindow):
 
     def _on_audio_error(self, message: str) -> None:
         self.statusBar().showMessage(self.t("audio_failed", "Sprachausgabe fehlgeschlagen.") + f" {message}", 7000)
+        waiting_submit = self.pending_auto_submit_message is not None and self.auto_answer_waiting_for_user_audio
+        pending_source = bool(self.pending_auto_answer_source)
         QMessageBox.warning(
             self,
             self.t("tts_error_title", "TTS-Fehler"),
             self.t("tts_error_message", "Die Sprachausgabe ist fehlgeschlagen:") + f"\n\n{message}",
         )
+        if waiting_submit and self.worker_thread is None:
+            self.auto_answer_waiting_for_user_audio = False
+            self.pending_auto_submit_message = None
+            self._begin_assistant_request()
+        elif pending_source:
+            source = self.pending_auto_answer_source
+            self.pending_auto_answer_source = ""
+            self._schedule_auto_answer(source)
 
     def _on_audio_status(self, message: str) -> None:
         self.statusBar().showMessage(message, 3000)
+        finished_msg = self.t("audio_finished", "Sprachausgabe beendet.")
+        if message == finished_msg:
+            if self.pending_auto_submit_message is not None and self.auto_answer_waiting_for_user_audio and self.worker_thread is None:
+                self.auto_answer_waiting_for_user_audio = False
+                self.pending_auto_submit_message = None
+                self._begin_assistant_request()
+                return
+            if self.pending_auto_answer_source and self.auto_answer_checkbox.isChecked() and not self.input_box.toPlainText().strip():
+                source = self.pending_auto_answer_source
+                self.pending_auto_answer_source = ""
+                self._schedule_auto_answer(source)
+
 
     def current_sapi_language_tag(self) -> str:
         code = (self.config.get("interface_language", "de") or "de").lower()
@@ -2063,6 +2422,16 @@ class MainWindow(QMainWindow):
             else:
                 self.statusBar().showMessage(self.t("audio_stop_not_available", "Das aktuelle Playback lässt sich nicht direkt stoppen."), 4000)
 
+        if not preserve_state and had_audio:
+            if self.pending_auto_submit_message is not None and self.auto_answer_waiting_for_user_audio and self.worker_thread is None:
+                self.auto_answer_waiting_for_user_audio = False
+                self.pending_auto_submit_message = None
+                self._begin_assistant_request()
+            elif self.pending_auto_answer_source and self.auto_answer_checkbox.isChecked() and not self.input_box.toPlainText().strip():
+                source = self.pending_auto_answer_source
+                self.pending_auto_answer_source = ""
+                self._schedule_auto_answer(source)
+
     def try_play_wav(self, path: Path) -> None:
         try:
             self.stop_audio_playback(silent=True)
@@ -2090,6 +2459,7 @@ class MainWindow(QMainWindow):
 
             self.config = dialog.get_config()
             save_config(self.config)
+            self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
 
             lang_changed = old_lang != self.config.get("interface_language", "de")
             theme_changed = old_theme != self.config.get("theme", "Midnight")
@@ -2097,7 +2467,8 @@ class MainWindow(QMainWindow):
                 "tts_backend", "tts_base_url", "tts_voice", "tts_model", "tts_format",
                 "autoplay_tts", "auto_read_assistant_responses",
                 "tts_user_voice", "tts_lexicon_enabled", "windows_sapi_lexicon_enabled", "windows_sapi_rate",
-                "windows_sapi_pitch", "windows_sapi_volume"
+                "windows_sapi_pitch", "windows_sapi_volume", "read_all_include_names",
+                "user_display_name", "assistant_display_name"
             }
             tts_changed = any(old_config.get(k) != self.config.get(k) for k in tts_keys)
             restarted_tts = False
