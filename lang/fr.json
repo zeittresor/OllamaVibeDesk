@@ -209,5 +209,18 @@
   "export_pdf_done": "PDF exported: {path}",
   "export_pdf_created": "Exported at",
   "tts_role_user_prefix": "You:",
-  "tts_role_assistant_prefix": "Assistant:"
+  "tts_role_assistant_prefix": "Assistant:",
+  "auto_answer_checkbox": "Réponse auto (ELIZA)",
+  "auto_answer_enabled": "Réponse auto activée.",
+  "auto_answer_disabled": "Réponse auto désactivée.",
+  "auto_answer_scheduled": "Préparation de la réponse automatique …",
+  "read_all_include_names_label": "Prononcer les noms des interlocuteurs avec Lire tout",
+  "user_display_name_label": "Nom affiché pour vous",
+  "assistant_display_name_label": "Nom affiché pour l’assistant",
+  "auto_answer_settings_hint": "Modifier des phrases supplémentaires pour le mode ELIZA.",
+  "edit_auto_answer_phrases": "Modifier les phrases auto-réponse …",
+  "auto_answer_editor_title": "Modifier les phrases de réponse automatique",
+  "auto_answer_editor_info": "Le fichier JSON est chargé directement depuis le dossier de l’application. Sous 'phrases', vous pouvez définir des phrases supplémentaires par langue, utilisées en plus du mode ELIZA.",
+  "empty_auto_answer_title": "Fichier vide",
+  "empty_auto_answer_text": "Le fichier JSON ne doit pas être vide."
 }

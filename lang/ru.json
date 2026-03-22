@@ -209,5 +209,18 @@
   "export_pdf_done": "PDF exported: {path}",
   "export_pdf_created": "Exported at",
   "tts_role_user_prefix": "You:",
-  "tts_role_assistant_prefix": "Assistant:"
+  "tts_role_assistant_prefix": "Assistant:",
+  "auto_answer_checkbox": "Автоответ (ELIZA)",
+  "auto_answer_enabled": "Автоответ включён.",
+  "auto_answer_disabled": "Автоответ выключен.",
+  "auto_answer_scheduled": "Подготавливается автоматический ответ …",
+  "read_all_include_names_label": "Озвучивать имена говорящих при Чтении всего чата",
+  "user_display_name_label": "Отображаемое имя для вас",
+  "assistant_display_name_label": "Отображаемое имя для ассистента",
+  "auto_answer_settings_hint": "Редактировать дополнительные фразы автоответа для режима ELIZA.",
+  "edit_auto_answer_phrases": "Редактировать фразы автоответа …",
+  "auto_answer_editor_title": "Редактировать фразы автоматического ответа",
+  "auto_answer_editor_info": "JSON-файл загружается прямо из папки приложения. В разделе 'phrases' можно хранить дополнительные фразы по языкам, которые используются вместе с режимом ELIZA.",
+  "empty_auto_answer_title": "Пустой файл",
+  "empty_auto_answer_text": "JSON-файл не должен быть пустым."
 }

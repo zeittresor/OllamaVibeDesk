@@ -52,10 +52,18 @@ if not exist "app_data\chats" mkdir "app_data\chats"
 
 echo [4/4] Installation complete.
 echo.
-echo The app will start automatically in 10 seconds.
-echo Press N to cancel the first launch.
-choice /C YN /N /T 10 /D Y /M "Start automatically with run_windows.bat? [Y/N]"
-if errorlevel 2 goto end_install
+echo The app will start automatically soon.
+echo Press N during the countdown to cancel the first launch.
+for /L %%S in (10,-1,1) do (
+    echo Starting automatically with run_windows.bat in %%S seconds... Press N to cancel.
+    choice /C NS /N /T 1 /D S >nul
+    if errorlevel 1 if not errorlevel 2 (
+        echo.
+        echo First launch canceled.
+        goto end_install
+    )
+)
+echo.
 call run_windows.bat
 :end_install
 endlocal

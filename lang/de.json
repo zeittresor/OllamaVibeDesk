@@ -209,5 +209,18 @@
   "export_pdf_done": "PDF exportiert: {path}",
   "export_pdf_created": "Exportiert am",
   "tts_role_user_prefix": "Du:",
-  "tts_role_assistant_prefix": "Assistent:"
+  "tts_role_assistant_prefix": "Assistent:",
+  "auto_answer_checkbox": "Auto Answer (ELIZA)",
+  "auto_answer_enabled": "Auto Answer aktiviert.",
+  "auto_answer_disabled": "Auto Answer deaktiviert.",
+  "auto_answer_scheduled": "Automatische Antwort wird vorbereitet …",
+  "read_all_include_names_label": "Bei 'Alles vorlesen' Sprecher-Namen mit vorlesen",
+  "user_display_name_label": "Anzeigename für dich",
+  "assistant_display_name_label": "Anzeigename für den Assistenten",
+  "auto_answer_settings_hint": "Bearbeite zusätzliche automatische Antwortsätze für den ELIZA-Modus.",
+  "edit_auto_answer_phrases": "Auto-Answer-Sätze bearbeiten …",
+  "auto_answer_editor_title": "Automatische Antwortsätze bearbeiten",
+  "auto_answer_editor_info": "Die JSON-Datei wird direkt aus dem App-Ordner geladen. Unter 'phrases' können pro Sprache zusätzliche Sätze hinterlegt werden, die ergänzend zum ELIZA-Modus verwendet werden.",
+  "empty_auto_answer_title": "Leere Datei",
+  "empty_auto_answer_text": "Die JSON-Datei darf nicht leer sein."
 }
