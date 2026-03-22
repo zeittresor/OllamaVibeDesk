@@ -107,6 +107,35 @@ class VibeVoiceManager:
         except Exception as exc:
             return False, str(exc)
 
+    def wait_until_healthy(self, log: Callable[[str], None], max_wait: int = 120, poll_seconds: float = 2.0) -> tuple[bool, str]:
+        last_msg = ''
+        steps = max(1, int(max_wait / poll_seconds))
+        for index in range(steps):
+            ok, msg = self.healthcheck(timeout=min(5.0, poll_seconds + 1.0))
+            last_msg = msg
+            if ok:
+                waited = int(index * poll_seconds)
+                log(self.t("vv_health_ready_after", "TTS-Server ist bereit nach {seconds} s: {message}").format(seconds=waited, message=msg))
+                return True, msg
+            time.sleep(poll_seconds)
+        log(self.t("vv_health_wait_timeout", "TTS-Server wurde innerhalb von {seconds} s nicht bereit. Letzte Meldung: {message}").format(seconds=max_wait, message=last_msg or self.t("vv_unknown", "unbekannt")))
+        return False, last_msg
+
+    def ensure_server_running(self, log: Callable[[str], None], max_wait: int = 120) -> bool:
+        ok, msg = self.healthcheck(timeout=2.0)
+        if ok:
+            log(self.t("vv_server_already", "TTS-Server antwortet bereits."))
+            return False
+        log(self.t("vv_autostart_needed", "VibeVoice ist noch nicht erreichbar. Automatischer Start wird versucht …"))
+        self.start_server(log)
+        ok, msg = self.healthcheck(timeout=2.0)
+        if ok:
+            return True
+        ok, _msg = self.wait_until_healthy(log, max_wait=max_wait, poll_seconds=2.0)
+        if ok:
+            return True
+        raise RuntimeError(self.t("vv_autostart_failed", "Der lokale VibeVoice-Server konnte nicht rechtzeitig gestartet werden. Bitte VibeVoice-Setup öffnen und die Logdatei prüfen."))
+
     def status(self) -> TTSStatus:
         self.ensure_dirs()
         health_ok, health_msg = self.healthcheck()

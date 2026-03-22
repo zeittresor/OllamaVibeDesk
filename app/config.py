@@ -17,6 +17,7 @@ APP_DATA_DIR = APP_ROOT / "app_data"
 CHATS_DIR = APP_DATA_DIR / "chats"
 AUDIO_DIR = APP_DATA_DIR / "audio"
 CACHE_DIR = APP_DATA_DIR / "cache"
+EXPORTS_DIR = APP_DATA_DIR / "exports"
 TTS_DIR = APP_DATA_DIR / "tts"
 LANG_DIR = APP_ROOT / "lang"
 SAPI_LEXICON_PATH = TTS_DIR / "sapi_lexicon.json"
@@ -31,7 +32,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "tts_format": "wav",
     "autoplay_tts": True,
     "auto_read_assistant_responses": True,
-    "windows_sapi_lexicon_enabled": False,
+    "tts_lexicon_enabled": True,
+    "windows_sapi_lexicon_enabled": True,
+    "tts_user_voice": "",
     "windows_sapi_rate": 0,
     "windows_sapi_pitch": 0,
     "windows_sapi_volume": 100,
@@ -73,6 +76,60 @@ def ensure_default_sapi_lexicon() -> None:
                 "from": "Ollama",
                 "to": "Olama",
                 "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "z. b.",
+                "to": "zum beispiel",
+                "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "z.B.",
+                "to": "zum beispiel",
+                "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "d. h.",
+                "to": "das heißt",
+                "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "d.h.",
+                "to": "das heißt",
+                "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "u. a.",
+                "to": "unter anderem",
+                "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "u.a.",
+                "to": "unter anderem",
+                "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "usw.",
+                "to": "und so weiter",
+                "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "ca.",
+                "to": "circa",
+                "case_sensitive": False
+            },
+            {
+                "type": "phrase",
+                "from": "bzw.",
+                "to": "beziehungsweise",
+                "case_sensitive": False
             }
         ]
     }
@@ -87,6 +144,7 @@ def ensure_directories() -> None:
     CHATS_DIR.mkdir(parents=True, exist_ok=True)
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
     TTS_DIR.mkdir(parents=True, exist_ok=True)
     LANG_DIR.mkdir(parents=True, exist_ok=True)
     ensure_default_sapi_lexicon()
@@ -102,6 +160,11 @@ def load_config() -> Dict[str, Any]:
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         merged = DEFAULT_CONFIG.copy()
         merged.update(data)
+        if "tts_lexicon_enabled" not in data:
+            merged["tts_lexicon_enabled"] = bool(data.get("windows_sapi_lexicon_enabled", DEFAULT_CONFIG["tts_lexicon_enabled"]))
+        merged["windows_sapi_lexicon_enabled"] = bool(merged.get("tts_lexicon_enabled", True))
+        if "tts_user_voice" not in data:
+            merged["tts_user_voice"] = data.get("tts_voice", "")
         return merged
     except Exception:
         save_config(DEFAULT_CONFIG)

@@ -200,5 +200,14 @@
   "vv_voice_download_progress": "Descarga del preset de voz {filename}: {percent}%",
   "vv_voice_download_invalid": "El preset de voz descargado no es válido: {filename}",
   "vv_voice_download_done_file": "Preset de voz guardado: {filename}",
-  "vv_voice_download_done": "Presets oficiales adicionales de voz descargados: {count}. Reinicia el wrapper para que detecte las nuevas voces."
+  "vv_voice_download_done": "Presets oficiales adicionales de voz descargados: {count}. Reinicia el wrapper para que detecte las nuevas voces.",
+  "tts_user_voice_label": "Voice (user)",
+  "tts_lexicon_label": "Use TTS pronunciation lexicon",
+  "tts_lexicon_tooltip": "Apply a local JSON lexicon to cleaned read-aloud text before synthesis.",
+  "read_all_button": "Read all",
+  "export_pdf_button": "Export chat",
+  "export_pdf_done": "PDF exported: {path}",
+  "export_pdf_created": "Exported at",
+  "tts_role_user_prefix": "You:",
+  "tts_role_assistant_prefix": "Assistant:"
 }

@@ -200,5 +200,14 @@
   "vv_voice_download_progress": "Téléchargement du préréglage vocal {filename} : {percent}%",
   "vv_voice_download_invalid": "Le préréglage vocal téléchargé est invalide : {filename}",
   "vv_voice_download_done_file": "Préréglage vocal enregistré : {filename}",
-  "vv_voice_download_done": "Préréglages vocaux officiels supplémentaires téléchargés : {count}. Redémarrez le wrapper pour que les nouvelles voix soient détectées."
+  "vv_voice_download_done": "Préréglages vocaux officiels supplémentaires téléchargés : {count}. Redémarrez le wrapper pour que les nouvelles voix soient détectées.",
+  "tts_user_voice_label": "Voice (user)",
+  "tts_lexicon_label": "Use TTS pronunciation lexicon",
+  "tts_lexicon_tooltip": "Apply a local JSON lexicon to cleaned read-aloud text before synthesis.",
+  "read_all_button": "Read all",
+  "export_pdf_button": "Export chat",
+  "export_pdf_done": "PDF exported: {path}",
+  "export_pdf_created": "Exported at",
+  "tts_role_user_prefix": "You:",
+  "tts_role_assistant_prefix": "Assistant:"
 }

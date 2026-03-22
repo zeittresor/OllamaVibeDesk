@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import Callable, List, Optional
 
 import markdown
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal, QSize, QUrl, QTimer
-from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QFont, QTextOption
+from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal, QSize, QUrl, QTimer, QMarginsF
+from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QFont, QTextOption, QTextDocument, QPageLayout, QPageSize
+from PyQt6.QtPrintSupport import QPrinter
+
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -46,7 +48,7 @@ from PyQt6.QtWidgets import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import AUDIO_DIR, CHATS_DIR, SAPI_LEXICON_PATH, load_config, save_config, ensure_directories
+from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, SAPI_LEXICON_PATH, load_config, save_config, ensure_directories
 from app.models import ChatMessage, ChatSession
 from app.ollama_client import OllamaClient
 from app.themes import THEMES
@@ -194,6 +196,22 @@ def apply_sapi_lexicon(text: str, lexicon: dict | None) -> str:
     return result.strip()
 
 
+def message_content_to_html(text: str, is_assistant: bool) -> str:
+    safe_text = text if is_assistant else html.escape(text)
+    html_text = markdown.markdown(safe_text, extensions=["fenced_code", "tables"])
+    css = """
+    <style>
+        body { font-family: 'Segoe UI', 'Inter', sans-serif; line-height: 1.45; }
+        p { margin: 0 0 0.7em 0; }
+        pre { background: rgba(0,0,0,0.22); padding: 10px; border-radius: 10px; overflow-x: auto; }
+        code { background: rgba(0,0,0,0.16); padding: 2px 4px; border-radius: 6px; }
+        a { color: #7ab3ff; text-decoration: none; }
+        ul, ol { margin-top: 0.3em; }
+    </style>
+    """
+    return css + html_text
+
+
 def pretty_timestamp(value: str) -> str:
     try:
         dt = datetime.fromisoformat(value)
@@ -330,12 +348,12 @@ class BubbleWidget(QFrame):
             copy_btn.clicked.connect(lambda: self.on_copy(self.message.content))
             actions.addWidget(copy_btn)
 
-        if is_assistant and self.on_read_aloud is not None:
+        if self.on_read_aloud is not None:
             speak_btn = QPushButton(self.translate("read_aloud_button", "Vorlesen"))
             speak_btn.clicked.connect(lambda: self.on_read_aloud(self.message))
             actions.addWidget(speak_btn)
 
-        if is_assistant and self.on_stop_audio is not None:
+        if self.on_stop_audio is not None:
             stop_audio_btn = QPushButton(self.translate("stop_audio_button", "Audio stoppen"))
             stop_audio_btn.clicked.connect(self.on_stop_audio)
             actions.addWidget(stop_audio_btn)
@@ -457,19 +475,7 @@ class BubbleWidget(QFrame):
         has_visible_text = bool(text.strip())
         if self.is_assistant and has_visible_text:
             self.set_loading(False)
-        safe_text = text if self.is_assistant else html.escape(text)
-        html_text = markdown.markdown(safe_text, extensions=["fenced_code", "tables"])
-        css = """
-        <style>
-            body { font-family: 'Segoe UI', 'Inter', sans-serif; line-height: 1.45; }
-            p { margin: 0 0 0.7em 0; }
-            pre { background: rgba(0,0,0,0.22); padding: 10px; border-radius: 10px; overflow-x: auto; }
-            code { background: rgba(0,0,0,0.16); padding: 2px 4px; border-radius: 6px; }
-            a { color: #7ab3ff; text-decoration: none; }
-            ul, ol { margin-top: 0.3em; }
-        </style>
-        """
-        self.browser.setHtml(css + html_text)
+        self.browser.setHtml(message_content_to_html(text, self.is_assistant))
         self._update_browser_height()
         QTimer.singleShot(0, self._update_browser_height)
 
@@ -510,13 +516,13 @@ class LexiconEditorDialog(QDialog):
     def __init__(self, language_code: str = "de", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.translations = load_language_pack(language_code)
-        self.setWindowTitle(self.t("lexicon_editor_title", "Windows-SAPI Aussprache-Lexikon bearbeiten"))
+        self.setWindowTitle(self.t("lexicon_editor_title", "TTS Aussprache-Lexikon bearbeiten"))
         self.setModal(True)
         self.resize(760, 560)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel(self.t("lexicon_info", "Die JSON-Datei wird direkt aus dem App-Ordner geladen. Unterstützt werden Einträge vom Typ 'word' und 'phrase'."))
+        info = QLabel(self.t("lexicon_info", "Die JSON-Datei wird direkt aus dem App-Ordner geladen. Unterstützt werden Einträge vom Typ 'word' und 'phrase'. Das Lexikon wird für Windows-SAPI und VibeVoice auf den bereinigten Vorlesetext angewendet."))
         info.setWordWrap(True)
         info.setObjectName("SubtleLabel")
         layout.addWidget(info)
@@ -600,17 +606,34 @@ class SettingsDialog(QDialog):
         self.open_tts_setup_callback = open_tts_setup_callback
         self.setWindowTitle(self.t("settings_title", "Einstellungen"))
         self.setModal(True)
-        self.resize(700, 680)
+        self.resize(760, 760)
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(10)
 
-        def add_row(label_text: str, widget: QWidget) -> None:
-            row = QVBoxLayout()
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        root.addWidget(self.scroll, 1)
+
+        self.content = QWidget()
+        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(4, 4, 4, 4)
+        self.content_layout.setSpacing(12)
+        self.scroll.setWidget(self.content)
+
+        def add_row(label_text: str, widget: QWidget) -> QWidget:
+            container = QWidget()
+            row = QVBoxLayout(container)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(4)
             label = QLabel(label_text)
             label.setObjectName("SubtleLabel")
             row.addWidget(label)
             row.addWidget(widget)
-            root.addLayout(row)
+            self.content_layout.addWidget(container)
+            return container
 
         self.interface_language = QComboBox()
         for code, display_name in available_languages():
@@ -640,7 +663,7 @@ class SettingsDialog(QDialog):
         self.tts_hint = QLabel()
         self.tts_hint.setObjectName("SubtleLabel")
         self.tts_hint.setWordWrap(True)
-        root.addWidget(self.tts_hint)
+        self.content_layout.addWidget(self.tts_hint)
 
         self.tts_url = QLineEdit(self.config["tts_base_url"])
         add_row(self.t("tts_base_url_label", "TTS Base URL"), self.tts_url)
@@ -648,19 +671,34 @@ class SettingsDialog(QDialog):
         self.tts_voice = QComboBox()
         self.tts_voice.setEditable(True)
         self.tts_voice.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        add_row(self.t("tts_voice_label", "Sprecher / Stimme"), self.tts_voice)
+        self.tts_voice_row = add_row(self.t("tts_voice_label", "Sprecher / Stimme (Assistent)"), self.tts_voice)
+
+        self.user_tts_voice = QComboBox()
+        self.user_tts_voice.setEditable(True)
+        self.user_tts_voice.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.user_tts_voice_row = add_row(self.t("tts_user_voice_label", "Sprecher / Stimme (Benutzer)"), self.user_tts_voice)
 
         self.tts_model = QLineEdit(self.config["tts_model"])
         add_row(self.t("tts_model_label", "TTS Modell"), self.tts_model)
 
         self.autoplay = QCheckBox(self.t("autoplay_label", "Audio nach dem Erzeugen direkt abspielen"))
         self.autoplay.setChecked(bool(self.config.get("autoplay_tts", True)))
-        root.addWidget(self.autoplay)
+        self.content_layout.addWidget(self.autoplay)
 
         self.auto_read_responses = QCheckBox(self.t("auto_read_label", "Jede neue Assistent-Antwort automatisch vorlesen"))
         self.auto_read_responses.setChecked(bool(self.config.get("auto_read_assistant_responses", True)))
         self.auto_read_responses.setToolTip(self.t("auto_read_tooltip", "Wenn aktiv, wird nach jeder neuen Assistent-Antwort automatisch TTS erzeugt und abgespielt."))
-        root.addWidget(self.auto_read_responses)
+        self.content_layout.addWidget(self.auto_read_responses)
+
+        lexicon_row = QHBoxLayout()
+        self.tts_lexicon = QCheckBox(self.t("tts_lexicon_label", "TTS Aussprache-Lexikon verwenden"))
+        self.tts_lexicon.setChecked(bool(self.config.get("tts_lexicon_enabled", self.config.get("windows_sapi_lexicon_enabled", True))))
+        self.tts_lexicon.setToolTip(self.t("tts_lexicon_tooltip", "Wendet vor dem Vorlesen ein lokales JSON-Lexikon auf den bereinigten Text an."))
+        lexicon_row.addWidget(self.tts_lexicon, 1)
+        self.edit_sapi_lexicon_btn = QPushButton(self.t("edit_lexicon", "Lexikon bearbeiten …"))
+        self.edit_sapi_lexicon_btn.clicked.connect(self.edit_sapi_lexicon)
+        lexicon_row.addWidget(self.edit_sapi_lexicon_btn)
+        self.content_layout.addLayout(lexicon_row)
 
         self.sapi_group = QFrame()
         sapi_layout = QVBoxLayout(self.sapi_group)
@@ -668,11 +706,6 @@ class SettingsDialog(QDialog):
         sapi_title = QLabel(self.t("windows_sapi_group_title", "Windows-SAPI Feinabstimmung"))
         sapi_title.setObjectName("SubtleLabel")
         sapi_layout.addWidget(sapi_title)
-
-        self.windows_sapi_lexicon = QCheckBox(self.t("sapi_lexicon_label", "Windows-SAPI Aussprache-Optimierung verwenden"))
-        self.windows_sapi_lexicon.setChecked(bool(self.config.get("windows_sapi_lexicon_enabled", False)))
-        self.windows_sapi_lexicon.setToolTip(self.t("sapi_lexicon_tooltip", "Wendet vor dem Vorlesen ein lokales JSON-Lexikon auf den bereinigten Text an."))
-        sapi_layout.addWidget(self.windows_sapi_lexicon)
 
         self.sapi_rate_slider, self.sapi_rate_label_value = self._make_slider_row(
             sapi_layout,
@@ -698,14 +731,7 @@ class SettingsDialog(QDialog):
             int(self.config.get("windows_sapi_volume", 100)),
             None,
         )
-
-        sapi_tools_row = QHBoxLayout()
-        sapi_tools_row.addStretch()
-        self.edit_sapi_lexicon_btn = QPushButton(self.t("edit_lexicon", "Lexikon bearbeiten …"))
-        self.edit_sapi_lexicon_btn.clicked.connect(self.edit_sapi_lexicon)
-        sapi_tools_row.addWidget(self.edit_sapi_lexicon_btn)
-        sapi_layout.addLayout(sapi_tools_row)
-        root.addWidget(self.sapi_group)
+        self.content_layout.addWidget(self.sapi_group)
 
         self.system_prompt = QPlainTextEdit(self.config.get("system_prompt", ""))
         self.system_prompt.setPlaceholderText(self.t("system_prompt_placeholder", "Optionaler System-Prompt für neue Anfragen"))
@@ -717,7 +743,8 @@ class SettingsDialog(QDialog):
         self.open_tts_setup_btn = QPushButton(self.t("vibevoice_setup_open", "VibeVoice-Setup öffnen …"))
         self.open_tts_setup_btn.clicked.connect(self.open_tts_setup)
         tts_tools_row.addWidget(self.open_tts_setup_btn)
-        root.addLayout(tts_tools_row)
+        self.content_layout.addLayout(tts_tools_row)
+        self.content_layout.addStretch(1)
 
         self.tts_backend.currentIndexChanged.connect(self.refresh_tts_voice_options)
         self.refresh_tts_voice_options()
@@ -764,20 +791,54 @@ class SettingsDialog(QDialog):
     def current_tts_backend(self) -> str:
         return (self.tts_backend.currentData() or self.tts_backend.currentText() or "disabled").strip()
 
-    def _current_voice_value(self) -> str:
-        idx = self.tts_voice.currentIndex()
-        current_text = self.tts_voice.currentText().strip()
-        if idx >= 0 and current_text == self.tts_voice.itemText(idx):
-            data = self.tts_voice.itemData(idx)
+    def _combo_value(self, combo: QComboBox) -> str:
+        idx = combo.currentIndex()
+        current_text = combo.currentText().strip()
+        if idx >= 0 and current_text == combo.itemText(idx):
+            data = combo.itemData(idx)
             if isinstance(data, str) and data.strip():
                 return data.strip()
         return current_text
 
+    def _current_voice_value(self) -> str:
+        return self._combo_value(self.tts_voice)
+
+    def _current_user_voice_value(self) -> str:
+        return self._combo_value(self.user_tts_voice)
+
+    def _apply_voice_selection(self, combo: QComboBox, voice_entries: list[tuple[str, str]], final_voice: str, backend: str) -> None:
+        combo.blockSignals(True)
+        combo.clear()
+        for value, label in voice_entries:
+            combo.addItem(label, value)
+        if final_voice:
+            selected_index = -1
+            for i in range(combo.count()):
+                item_data = combo.itemData(i)
+                item_text = combo.itemText(i)
+                if item_data == final_voice or item_text == final_voice:
+                    selected_index = i
+                    break
+                if backend == "windows_sapi" and not str(final_voice).startswith(("sapi::", "onecore::")):
+                    if item_data == TTSClient.make_sapi_voice_id(final_voice) or item_text.startswith(final_voice + " "):
+                        selected_index = i
+                        break
+            if selected_index >= 0:
+                combo.setCurrentIndex(selected_index)
+            else:
+                combo.addItem(final_voice, final_voice)
+                combo.setCurrentText(final_voice)
+        combo.blockSignals(False)
+
     def refresh_tts_voice_options(self) -> None:
         backend = self.current_tts_backend()
         current_voice = self._current_voice_value() or self.config.get("tts_voice", "")
-        if backend == "vibevoice_openai" and str(current_voice).startswith(("sapi::", "onecore::")):
-            current_voice = ""
+        current_user_voice = self._current_user_voice_value() or self.config.get("tts_user_voice", "") or current_voice
+        if backend == "vibevoice_openai":
+            if str(current_voice).startswith(("sapi::", "onecore::")):
+                current_voice = ""
+            if str(current_user_voice).startswith(("sapi::", "onecore::")):
+                current_user_voice = ""
         hint = ""
         default_voice = "Emma"
         voice_entries: list[tuple[str, str]] = []
@@ -807,37 +868,20 @@ class SettingsDialog(QDialog):
                 hint += " " + self.t("tts_wrapper_not_running", "Der Wrapper scheint aktuell nicht zu laufen oder ist noch nicht eingerichtet.")
 
         self.tts_hint.setText(hint)
-        self.tts_voice.blockSignals(True)
-        self.tts_voice.clear()
-        for value, label in voice_entries:
-            self.tts_voice.addItem(label, value)
         config_voice = self.config.get("tts_voice", default_voice)
+        config_user_voice = self.config.get("tts_user_voice", "") or config_voice
         if backend == "vibevoice_openai" and str(config_voice).startswith(("sapi::", "onecore::")):
             config_voice = default_voice
+        if backend == "vibevoice_openai" and str(config_user_voice).startswith(("sapi::", "onecore::")):
+            config_user_voice = config_voice
         final_voice = current_voice or config_voice
-        if final_voice:
-            selected_index = -1
-            for i in range(self.tts_voice.count()):
-                item_data = self.tts_voice.itemData(i)
-                item_text = self.tts_voice.itemText(i)
-                if item_data == final_voice:
-                    selected_index = i
-                    break
-                if backend == "windows_sapi" and not str(final_voice).startswith(("sapi::", "onecore::")):
-                    if item_data == TTSClient.make_sapi_voice_id(final_voice) or item_text.startswith(final_voice + " "):
-                        selected_index = i
-                        break
-                if item_text == final_voice:
-                    selected_index = i
-                    break
-            if selected_index >= 0:
-                self.tts_voice.setCurrentIndex(selected_index)
-            else:
-                self.tts_voice.addItem(final_voice, final_voice)
-                self.tts_voice.setCurrentText(final_voice)
-        self.tts_voice.blockSignals(False)
-        sapi_visible = backend == "windows_sapi"
-        self.sapi_group.setVisible(sapi_visible)
+        final_user_voice = current_user_voice or config_user_voice
+        self._apply_voice_selection(self.tts_voice, voice_entries, final_voice, backend)
+        self._apply_voice_selection(self.user_tts_voice, voice_entries, final_user_voice, backend)
+        visible = backend != "disabled"
+        self.tts_voice_row.setVisible(visible)
+        self.user_tts_voice_row.setVisible(visible)
+        self.sapi_group.setVisible(backend == "windows_sapi")
         self.open_tts_setup_btn.setVisible(backend == "vibevoice_openai")
 
     def open_tts_setup(self) -> None:
@@ -858,15 +902,19 @@ class SettingsDialog(QDialog):
         data["tts_backend"] = self.current_tts_backend()
         data["tts_base_url"] = self.tts_url.text().strip()
         voice_value = self._current_voice_value()
+        user_voice_value = self._current_user_voice_value()
         if data["tts_backend"] == "windows_sapi":
             data["tts_voice"] = voice_value
+            data["tts_user_voice"] = user_voice_value or voice_value
             data["tts_format"] = "wav"
         else:
             data["tts_voice"] = voice_value or "Emma"
+            data["tts_user_voice"] = user_voice_value or data["tts_voice"]
         data["tts_model"] = self.tts_model.text().strip() or "tts-1-hd"
         data["autoplay_tts"] = self.autoplay.isChecked()
         data["auto_read_assistant_responses"] = self.auto_read_responses.isChecked()
-        data["windows_sapi_lexicon_enabled"] = self.windows_sapi_lexicon.isChecked()
+        data["tts_lexicon_enabled"] = self.tts_lexicon.isChecked()
+        data["windows_sapi_lexicon_enabled"] = data["tts_lexicon_enabled"]
         data["windows_sapi_rate"] = int(self.sapi_rate_slider.value())
         data["windows_sapi_pitch"] = int(self.sapi_pitch_slider.value())
         data["windows_sapi_volume"] = int(self.sapi_volume_slider.value())
@@ -1285,6 +1333,18 @@ class MainWindow(QMainWindow):
         self.refresh_models_btn.clicked.connect(self.refresh_models)
         layout.addWidget(self.refresh_models_btn)
 
+        self.read_all_btn = QPushButton(self.t("read_all_button", "Alles vorlesen"))
+        self.read_all_btn.clicked.connect(self.read_aloud_conversation)
+        layout.addWidget(self.read_all_btn)
+
+        self.audio_stop_header_btn = QPushButton(self.t("stop_audio_button", "Audio stoppen"))
+        self.audio_stop_header_btn.clicked.connect(self.stop_audio_playback)
+        layout.addWidget(self.audio_stop_header_btn)
+
+        self.export_pdf_btn = QPushButton(self.t("export_pdf_button", "Chat exportieren"))
+        self.export_pdf_btn.clicked.connect(self.export_current_chat_pdf)
+        layout.addWidget(self.export_pdf_btn)
+
         self.settings_btn = QPushButton(self.t("settings_button", "Einstellungen"))
         self.settings_btn.clicked.connect(self.show_settings)
         layout.addWidget(self.settings_btn)
@@ -1352,6 +1412,9 @@ class MainWindow(QMainWindow):
         self.sidebar_hint.setText(self.t("chat_actions_hint", "Jede Assistent-Antwort hat direkt Aktionen für Kopieren, Vorlesen und Stoppen."))
         self.model_label.setText(self.t("model_label", "Modell"))
         self.refresh_models_btn.setText(self.t("refresh_models", "Modelle neu laden"))
+        self.read_all_btn.setText(self.t("read_all_button", "Alles vorlesen"))
+        self.audio_stop_header_btn.setText(self.t("stop_audio_button", "Audio stoppen"))
+        self.export_pdf_btn.setText(self.t("export_pdf_button", "Chat exportieren"))
         self.settings_btn.setText(self.t("settings_button", "Einstellungen"))
         self.input_box.setPlaceholderText(self.t("composer_placeholder", "Nachricht schreiben …  (Strg+Enter zum Senden)"))
         self.composer_hint.setText(self.t("composer_hint", "Ollama wird lokal angesprochen. Antworten werden gestreamt."))
@@ -1448,8 +1511,8 @@ class MainWindow(QMainWindow):
         bubble = BubbleWidget(
             message=message,
             is_assistant=message.role == "assistant",
-            on_read_aloud=self.read_aloud_message if message.role == "assistant" else None,
-            on_stop_audio=self.stop_audio_playback if message.role == "assistant" else None,
+            on_read_aloud=self.read_aloud_message,
+            on_stop_audio=self.stop_audio_playback,
             on_copy=self.copy_text,
             translate=self.t,
         )
@@ -1613,12 +1676,32 @@ class MainWindow(QMainWindow):
         bar.setValue(bar.maximum())
 
     def _prepare_tts_text(self, message: ChatMessage) -> str:
-        backend = self.config.get("tts_backend", "disabled")
         original_text = message.content.strip()
         text = markdown_to_tts_text(original_text)
-        if backend == "windows_sapi" and self.config.get("windows_sapi_lexicon_enabled", False):
+        if self.config.get("tts_lexicon_enabled", self.config.get("windows_sapi_lexicon_enabled", True)):
             text = apply_sapi_lexicon(text, load_sapi_lexicon())
         return text.strip()
+
+    def _tts_voice_for_message(self, message: ChatMessage) -> str:
+        if message.role == "user":
+            return (self.config.get("tts_user_voice", "") or self.config.get("tts_voice", "")).strip()
+        return (self.config.get("tts_voice", "")).strip()
+
+    def _conversation_segments(self) -> List[dict]:
+        segments: List[dict] = []
+        if not self.current_session:
+            return segments
+        for message in self.current_session.messages:
+            text = self._prepare_tts_text(message)
+            if not text:
+                continue
+            prefix = self.t("tts_role_user_prefix", "Du:") if message.role == "user" else self.t("tts_role_assistant_prefix", "Assistent:")
+            segments.append({
+                "role": message.role,
+                "text": f"{prefix} {text}".strip(),
+                "voice": self._tts_voice_for_message(message),
+            })
+        return segments
 
     def _clear_audio_state(self) -> None:
         self.current_playback_stoppable = False
@@ -1652,7 +1735,7 @@ class MainWindow(QMainWindow):
         client = TTSClient(
             backend='windows_sapi',
             base_url=self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
-            voice=self.config.get("tts_voice", ""),
+            voice=self._tts_voice_for_message(message),
             model=self.config.get("tts_model", "tts-1-hd"),
             audio_format='wav',
             windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
@@ -1696,6 +1779,198 @@ class MainWindow(QMainWindow):
         self.audio_playback_thread = threading.Thread(target=worker_run, args=(generation_id, start_sentence_index), daemon=True)
         self.audio_playback_thread.start()
 
+    def _start_external_segments_playback(self, segments: List[dict], backend: str, primary_message: Optional[ChatMessage] = None) -> None:
+        self.audio_generation_id += 1
+        generation_id = self.audio_generation_id
+        self.current_audio_message = primary_message
+        self.current_audio_backend = backend
+        self.current_audio_text = "\n".join(segment.get("text", "") for segment in segments)
+        self.current_audio_sentences = []
+        self.current_audio_sentence_index = 0
+
+        def worker_run(gen_id: int) -> None:
+            try:
+                if not sys.platform.startswith('win'):
+                    raise RuntimeError('Automatisches Playback ist hier nur unter Windows vollständig implementiert.')
+                import winsound
+                for index, segment in enumerate(segments):
+                    if gen_id != self.audio_generation_id:
+                        return
+                    text = str(segment.get("text", "")).strip()
+                    if not text:
+                        continue
+                    voice = str(segment.get("voice", "")).strip()
+                    target = AUDIO_DIR / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}_{index:03d}.wav"
+                    client = TTSClient(
+                        backend=backend,
+                        base_url=self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
+                        voice=voice or self.config.get("tts_voice", "Emma"),
+                        model=self.config.get("tts_model", "tts-1-hd"),
+                        audio_format='wav',
+                        windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
+                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
+                        windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
+                        windows_sapi_language=self.current_sapi_language_tag(),
+                    )
+                    path = client.synthesize_to_file(text, target)
+                    if gen_id != self.audio_generation_id:
+                        return
+                    self.current_playback_stoppable = True
+                    try:
+                        winsound.PlaySound(str(path), winsound.SND_FILENAME)
+                    except Exception as play_exc:
+                        raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}')
+                    finally:
+                        self.current_playback_stoppable = False
+                    if primary_message is not None:
+                        primary_message.audio_path = str(path)
+                if gen_id == self.audio_generation_id:
+                    self._clear_audio_state()
+                    self.audio_status_signal.emit(self.t("audio_finished", "Sprachausgabe beendet."))
+            except Exception as exc:
+                self.current_playback_stoppable = False
+                if gen_id == self.audio_generation_id:
+                    self._clear_audio_state()
+                    self.audio_error_signal.emit(str(exc))
+
+        self.audio_playback_thread = threading.Thread(target=worker_run, args=(generation_id,), daemon=True)
+        self.audio_playback_thread.start()
+
+    def read_aloud_conversation(self) -> None:
+        backend = self.config.get("tts_backend", "disabled")
+        if backend == "disabled":
+            QMessageBox.information(self, self.t("tts_disabled_title", "TTS deaktiviert"), self.t("tts_disabled_message", "TTS ist deaktiviert."))
+            return
+        segments = self._conversation_segments()
+        if not segments:
+            QMessageBox.information(self, self.t("empty_message_title", "Leere Nachricht"), self.t("empty_message_message", "Diese Nachricht enthält keinen vorlesbaren Text."))
+            return
+        self.stop_audio_playback(silent=True)
+        if backend == "vibevoice_openai":
+            manager = VibeVoiceManager(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), self.t)
+            try:
+                self.statusBar().showMessage(self.t("vibevoice_autostart_prepare", "Prüfe lokalen VibeVoice-Server …"), 0)
+                QApplication.processEvents()
+                def _autostart_log(msg: str) -> None:
+                    self.statusBar().showMessage(msg, 0)
+                    QApplication.processEvents()
+                started = manager.ensure_server_running(_autostart_log, max_wait=120)
+                if started:
+                    self.statusBar().showMessage(self.t("vibevoice_autostart_ready", "VibeVoice wurde automatisch gestartet."), 3500)
+            except Exception as exc:
+                QMessageBox.critical(self, self.t("tts_error_title", "TTS-Fehler"), self.t("vibevoice_autostart_failed_ui", "Der lokale VibeVoice-Server konnte nicht automatisch gestartet werden:") + f"\n\n{exc}")
+                return
+        if backend == "windows_sapi":
+            self._start_windows_sapi_segments_playback(segments)
+        else:
+            self._start_external_segments_playback(segments, backend)
+        self.statusBar().showMessage(self.t("audio_playback_started", "Sprachausgabe gestartet."), 2500)
+
+    def _start_windows_sapi_segments_playback(self, segments: List[dict]) -> None:
+        self.audio_generation_id += 1
+        generation_id = self.audio_generation_id
+        self.current_audio_message = None
+        self.current_audio_backend = 'windows_sapi'
+        self.current_audio_text = "\n".join(segment.get("text", "") for segment in segments)
+        self.current_audio_sentences = []
+        self.current_audio_sentence_index = 0
+
+        def worker_run(gen_id: int) -> None:
+            try:
+                if not sys.platform.startswith('win'):
+                    raise RuntimeError('Windows-SAPI ist nur unter Windows verfügbar.')
+                import winsound
+                sentence_counter = 0
+                for segment in segments:
+                    if gen_id != self.audio_generation_id:
+                        return
+                    text = str(segment.get("text", "")).strip()
+                    if not text:
+                        continue
+                    client = TTSClient(
+                        backend='windows_sapi',
+                        base_url=self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
+                        voice=str(segment.get("voice", "")).strip(),
+                        model=self.config.get("tts_model", "tts-1-hd"),
+                        audio_format='wav',
+                        windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
+                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
+                        windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
+                        windows_sapi_language=self.current_sapi_language_tag(),
+                    )
+                    for sentence in split_tts_sentences(text):
+                        if gen_id != self.audio_generation_id:
+                            return
+                        self.current_audio_sentence_index = sentence_counter
+                        sentence_counter += 1
+                        target = AUDIO_DIR / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}_{sentence_counter:03d}.wav"
+                        path = client.synthesize_to_file(sentence, target)
+                        if gen_id != self.audio_generation_id:
+                            return
+                        self.current_playback_stoppable = True
+                        try:
+                            winsound.PlaySound(str(path), winsound.SND_FILENAME)
+                        except Exception as play_exc:
+                            raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}')
+                        finally:
+                            self.current_playback_stoppable = False
+                if gen_id == self.audio_generation_id:
+                    self._clear_audio_state()
+                    self.audio_status_signal.emit(self.t("audio_finished", "Sprachausgabe beendet."))
+            except Exception as exc:
+                self.current_playback_stoppable = False
+                if gen_id == self.audio_generation_id:
+                    self._clear_audio_state()
+                    self.audio_error_signal.emit(str(exc))
+
+        self.audio_playback_thread = threading.Thread(target=worker_run, args=(generation_id,), daemon=True)
+        self.audio_playback_thread.start()
+
+    def export_current_chat_pdf(self) -> None:
+        if not self.current_session or not self.current_session.messages:
+            QMessageBox.information(self, self.t("export_pdf_button", "Chat exportieren"), self.t("empty_message_message", "Diese Nachricht enthält keinen vorlesbaren Text."))
+            return
+        EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        safe_title = re.sub(r'[^A-Za-z0-9._-]+', '_', self.current_session.title).strip('_') or 'chat_export'
+        default_path = EXPORTS_DIR / f"{safe_title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        selected_path, _ = QFileDialog.getSaveFileName(self, self.t("export_pdf_button", "Chat exportieren"), str(default_path), 'PDF (*.pdf)')
+        if not selected_path:
+            return
+        if not selected_path.lower().endswith('.pdf'):
+            selected_path += '.pdf'
+
+        body_parts = [
+            "<html><head><meta charset='utf-8'><style>",
+            "body { font-family: 'Segoe UI', sans-serif; color: #1b2330; }",
+            ".cover { margin-bottom: 24px; }",
+            ".title { font-size: 22pt; font-weight: 700; color: #243752; margin-bottom: 6px; }",
+            ".meta { color: #52627a; font-size: 9pt; margin-bottom: 14px; }",
+            ".msg { border: 1px solid #ccd7e6; border-radius: 12px; padding: 12px 14px; margin: 10px 0 16px 0; }",
+            ".msg.user { background: #eef4ff; }",
+            ".msg.assistant { background: #f6f8fb; border-left: 4px solid #6ea8ff; }",
+            ".msgmeta { font-size: 9pt; color: #52627a; margin-bottom: 8px; }",
+            "p { margin: 0 0 8px 0; } ul,ol { margin-top: 4px; } code { background: #eef2f7; padding: 1px 4px; border-radius: 4px; } pre { background: #eef2f7; padding: 8px; border-radius: 8px; }",
+            "</style></head><body>",
+        ]
+        body_parts.append(f"<div class='cover'><div class='title'>{html.escape(self.current_session.title)}</div><div class='meta'>{html.escape(self.t('model_label', 'Modell'))}: {html.escape(self.current_session.model_name or self.model_combo.currentText().strip())}<br>{html.escape(self.t('export_pdf_created', 'Exportiert am'))}: {html.escape(pretty_timestamp(datetime.now().isoformat(timespec='seconds')))}</div></div>")
+        for message in self.current_session.messages:
+            role_label = self.t('assistant_label', 'Assistent') if message.role == 'assistant' else self.t('you_label', 'Du')
+            msg_class = 'assistant' if message.role == 'assistant' else 'user'
+            rendered = markdown.markdown(message.content if message.role == 'assistant' else html.escape(message.content), extensions=['fenced_code', 'tables'])
+            body_parts.append(f"<div class='msg {msg_class}'><div class='msgmeta'>{html.escape(role_label)} · {html.escape(pretty_timestamp(message.created_at))}</div>{rendered}</div>")
+        body_parts.append('</body></html>')
+        html_doc = ''.join(body_parts)
+
+        document = QTextDocument()
+        document.setHtml(html_doc)
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(selected_path)
+        printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        printer.setPageMargins(QMarginsF(16, 16, 16, 16), QPageLayout.Unit.Millimeter)
+        document.print(printer)
+        self.statusBar().showMessage(self.t('export_pdf_done', 'PDF exportiert: {path}').format(path=selected_path), 5000)
+
     def _on_audio_error(self, message: str) -> None:
         self.statusBar().showMessage(self.t("audio_failed", "Sprachausgabe fehlgeschlagen.") + f" {message}", 7000)
         QMessageBox.warning(
@@ -1711,6 +1986,12 @@ class MainWindow(QMainWindow):
         code = (self.config.get("interface_language", "de") or "de").lower()
         if code.startswith("en"):
             return "en-US"
+        if code.startswith("fr"):
+            return "fr-FR"
+        if code.startswith("es"):
+            return "es-ES"
+        if code.startswith("ru"):
+            return "ru-RU"
         return "de-DE"
 
     def read_aloud_message(self, message: ChatMessage, show_disabled_message: bool = True, allow_autoplay: bool = True) -> None:
@@ -1725,44 +2006,40 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, self.t("empty_message_title", "Leere Nachricht"), self.t("empty_message_message", "Diese Nachricht enthält keinen vorlesbaren Text."))
             return
 
+        self.stop_audio_playback(silent=True)
+
         if backend == "windows_sapi":
-            self.stop_audio_playback(silent=True)
             self.statusBar().showMessage(self.t("audio_preparing", "Sprachausgabe wird vorbereitet …"), 2500)
             self._start_windows_sapi_sentence_playback(message, start_sentence_index=0)
             self.statusBar().showMessage(self.t("audio_playback_started", "Sprachausgabe gestartet."), 2500)
             return
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        target = AUDIO_DIR / f"{timestamp}_{uuid.uuid4().hex[:8]}.{self.config.get('tts_format', 'wav')}"
-        client = TTSClient(
-            backend=backend,
-            base_url=self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
-            voice=self.config.get("tts_voice", "Emma"),
-            model=self.config.get("tts_model", "tts-1-hd"),
-            audio_format=self.config.get("tts_format", "wav"),
-            windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-            windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
-            windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
-            windows_sapi_language=self.current_sapi_language_tag(),
-        )
+        if backend == "vibevoice_openai":
+            manager = VibeVoiceManager(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), self.t)
+            try:
+                self.statusBar().showMessage(self.t("vibevoice_autostart_prepare", "Prüfe lokalen VibeVoice-Server …"), 0)
+                QApplication.processEvents()
+                def _autostart_log(msg: str) -> None:
+                    self.statusBar().showMessage(msg, 0)
+                    QApplication.processEvents()
+                started = manager.ensure_server_running(_autostart_log, max_wait=120)
+                if started:
+                    self.statusBar().showMessage(self.t("vibevoice_autostart_ready", "VibeVoice wurde automatisch gestartet."), 3500)
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    self.t("tts_error_title", "TTS-Fehler"),
+                    self.t("vibevoice_autostart_failed_ui", "Der lokale VibeVoice-Server konnte nicht automatisch gestartet werden:") + f"\n\n{exc}",
+                )
+                return
 
-        try:
-            path = client.synthesize_to_file(text, target)
-            message.audio_path = str(path)
-            if self.current_session:
-                self.store.save(self.current_session)
-            self.statusBar().showMessage(self.t("audio_saved", "Audio gespeichert: {name}").format(name=path.name), 5000)
-
-            self.current_audio_message = message
-            self.current_audio_backend = backend
-            if allow_autoplay and self.config.get("autoplay_tts", True) and path.suffix.lower() == ".wav":
-                self.try_play_wav(path)
-        except Exception as exc:
-            QMessageBox.critical(self, "TTS-Fehler", f"Die Audioerzeugung ist fehlgeschlagen:\n\n{exc}")
+        segment = {"role": message.role, "text": text, "voice": self._tts_voice_for_message(message)}
+        self._start_external_segments_playback([segment], backend, primary_message=message)
+        self.statusBar().showMessage(self.t("audio_playback_started", "Sprachausgabe gestartet."), 2500)
 
     def stop_audio_playback(self, silent: bool = False, preserve_state: bool = False) -> None:
         stoppable = False
-        had_audio = self.current_audio_message is not None
+        had_audio = self.current_audio_message is not None or self.audio_playback_thread is not None or bool(self.current_audio_backend)
         if had_audio:
             self.audio_generation_id += 1
         try:
@@ -1819,7 +2096,7 @@ class MainWindow(QMainWindow):
             tts_keys = {
                 "tts_backend", "tts_base_url", "tts_voice", "tts_model", "tts_format",
                 "autoplay_tts", "auto_read_assistant_responses",
-                "windows_sapi_lexicon_enabled", "windows_sapi_rate",
+                "tts_user_voice", "tts_lexicon_enabled", "windows_sapi_lexicon_enabled", "windows_sapi_rate",
                 "windows_sapi_pitch", "windows_sapi_volume"
             }
             tts_changed = any(old_config.get(k) != self.config.get(k) for k in tts_keys)

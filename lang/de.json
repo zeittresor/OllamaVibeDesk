@@ -200,5 +200,14 @@
   "vv_voice_download_progress": "Stimmenpaket-Download {filename}: {percent}%",
   "vv_voice_download_invalid": "Das heruntergeladene Stimmenpaket ist ungültig: {filename}",
   "vv_voice_download_done_file": "Stimmenpaket gespeichert: {filename}",
-  "vv_voice_download_done": "Zusätzliche offizielle Stimmenpakete heruntergeladen: {count}. Bitte den Wrapper neu starten, damit die neuen Stimmen eingelesen werden."
+  "vv_voice_download_done": "Zusätzliche offizielle Stimmenpakete heruntergeladen: {count}. Bitte den Wrapper neu starten, damit die neuen Stimmen eingelesen werden.",
+  "tts_user_voice_label": "Sprecher / Stimme (Benutzer)",
+  "tts_lexicon_label": "TTS Aussprache-Lexikon verwenden",
+  "tts_lexicon_tooltip": "Wendet vor dem Vorlesen ein lokales JSON-Lexikon auf den bereinigten Text an.",
+  "read_all_button": "Alles vorlesen",
+  "export_pdf_button": "Chat exportieren",
+  "export_pdf_done": "PDF exportiert: {path}",
+  "export_pdf_created": "Exportiert am",
+  "tts_role_user_prefix": "Du:",
+  "tts_role_assistant_prefix": "Assistent:"
 }
