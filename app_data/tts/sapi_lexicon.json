@@ -1,0 +1,84 @@
+{
+  "enabled": true,
+  "language": "de-DE",
+  "entries": [
+    {
+      "type": "word",
+      "from": "GUI",
+      "to": "G U I",
+      "case_sensitive": false
+    },
+    {
+      "type": "word",
+      "from": "TTS",
+      "to": "T T S",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "PyQt6",
+      "to": "Pei Kju Ti sechs",
+      "case_sensitive": false
+    },
+    {
+      "type": "word",
+      "from": "Ollama",
+      "to": "Olama",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "z. b.",
+      "to": "zum beispiel",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "z.B.",
+      "to": "zum beispiel",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "d. h.",
+      "to": "das heißt",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "d.h.",
+      "to": "das heißt",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "u. a.",
+      "to": "unter anderem",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "u.a.",
+      "to": "unter anderem",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "usw.",
+      "to": "und so weiter",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "ca.",
+      "to": "circa",
+      "case_sensitive": false
+    },
+    {
+      "type": "phrase",
+      "from": "bzw.",
+      "to": "beziehungsweise",
+      "case_sensitive": false
+    }
+  ]
+}
