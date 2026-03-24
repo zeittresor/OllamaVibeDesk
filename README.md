@@ -16,7 +16,8 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - Windows installer and launcher batch files
 - no cloud requirement for normal chat usage once local services are present
 - multiple language support (currently: german, english, french, spanish, russian)
-- different voice output speakers for human and AI
+- different voice output speakers for human and AI (as Sapi or VibeVoice Speakers)
+- automatic VibeVoice server setup included
 - auto answer function to act like the human based of the ELIZA algorythm to automaticly continue a chat dialog
 
 ## Example with voice output (german language)
