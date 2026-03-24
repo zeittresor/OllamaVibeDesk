@@ -82,12 +82,21 @@ class TTSClient:
         env = os.environ.copy()
         if extra_env:
             env.update(extra_env)
+        run_kwargs = {
+            'capture_output': True,
+            'text': False,
+            'env': env,
+            'timeout': timeout,
+        }
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 6
+            run_kwargs['startupinfo'] = startupinfo
+            run_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
         result = subprocess.run(
             ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Sta', '-EncodedCommand', encoded],
-            capture_output=True,
-            text=False,
-            env=env,
-            timeout=timeout,
+            **run_kwargs,
         )
         result.stdout_text = self._decode_output(result.stdout)
         result.stderr_text = self._decode_output(result.stderr)

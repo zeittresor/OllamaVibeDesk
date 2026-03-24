@@ -76,15 +76,21 @@ QScrollArea {
 }
 QScrollBar:vertical {
     background: #151922;
-    width: 12px;
+    width: 16px;
     margin: 2px;
     border-radius: 6px;
 }
 QScrollBar::handle:vertical {
     background: #2f3949;
-    min-height: 30px;
-    border-radius: 6px;
+    min-height: 36px;
+    border-radius: 7px;
 }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { background: #151922; height: 16px; margin: 2px; border-radius: 6px; }
+QScrollBar::handle:horizontal { background: #2f3949; min-width: 36px; border-radius: 7px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 QCheckBox {
     spacing: 8px;
 }
@@ -180,15 +186,21 @@ QScrollArea {
 }
 QScrollBar:vertical {
     background: #f1f5f9;
-    width: 12px;
+    width: 16px;
     margin: 2px;
     border-radius: 6px;
 }
 QScrollBar::handle:vertical {
     background: #cbd5e1;
-    min-height: 30px;
-    border-radius: 6px;
+    min-height: 36px;
+    border-radius: 7px;
 }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { background: #f1f5f9; height: 16px; margin: 2px; border-radius: 6px; }
+QScrollBar::handle:horizontal { background: #cbd5e1; min-width: 36px; border-radius: 7px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 QCheckBox {
     spacing: 8px;
 }
@@ -222,8 +234,14 @@ QPushButton#DangerButton { background: #302010; border: 1px solid #7f4f24; color
 QComboBox, QLineEdit, QPlainTextEdit, QTextEdit, QListWidget, QTextBrowser { background: #061006; color: #d8ffd8; border: 1px solid #1f5c1f; border-radius: 12px; padding: 8px; }
 QListWidget::item:selected { background: #0f2a0f; border: 1px solid #34d058; }
 QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical { background: #081108; width: 12px; margin: 2px; border-radius: 6px; }
-QScrollBar::handle:vertical { background: #1f5c1f; min-height: 30px; border-radius: 6px; }
+QScrollBar:vertical { background: #081108; width: 16px; margin: 2px; border-radius: 6px; }
+QScrollBar::handle:vertical { background: #1f5c1f; min-height: 36px; border-radius: 7px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { background: #081108; height: 16px; margin: 2px; border-radius: 6px; }
+QScrollBar::handle:horizontal { background: #1f5c1f; min-width: 36px; border-radius: 7px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 QDialog { background: #050b05; }
 QProgressBar { border: 1px solid #1f5c1f; border-radius: 10px; background: #061006; text-align: center; min-height: 18px; }
 QProgressBar::chunk { background: #34d058; border-radius: 8px; }
@@ -242,8 +260,14 @@ QPushButton#DangerButton { background: #4c1419; border: 1px solid #9f2b35; }
 QComboBox, QLineEdit, QPlainTextEdit, QTextEdit, QListWidget, QTextBrowser { background: #1b0d10; color: #fff1f1; border: 1px solid #60202b; border-radius: 12px; padding: 8px; }
 QListWidget::item:selected { background: #3a1620; border: 1px solid #e23d52; }
 QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical { background: #1b0d10; width: 12px; margin: 2px; border-radius: 6px; }
-QScrollBar::handle:vertical { background: #7e2230; min-height: 30px; border-radius: 6px; }
+QScrollBar:vertical { background: #1b0d10; width: 16px; margin: 2px; border-radius: 6px; }
+QScrollBar::handle:vertical { background: #7e2230; min-height: 36px; border-radius: 7px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { background: #1b0d10; height: 16px; margin: 2px; border-radius: 6px; }
+QScrollBar::handle:horizontal { background: #7e2230; min-width: 36px; border-radius: 7px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 QDialog { background: #16090a; }
 QProgressBar { border: 1px solid #60202b; border-radius: 10px; background: #1b0d10; text-align: center; min-height: 18px; }
 QProgressBar::chunk { background: #e23d52; border-radius: 8px; }
@@ -262,8 +286,14 @@ QPushButton#DangerButton { background: #5f2f23; border: 1px solid #9e4a35; }
 QComboBox, QLineEdit, QPlainTextEdit, QTextEdit, QListWidget, QTextBrowser { background: #261d14; color: #fff2df; border: 1px solid #7a5d3f; border-radius: 12px; padding: 8px; }
 QListWidget::item:selected { background: #483522; border: 1px solid #d79342; }
 QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical { background: #261d14; width: 12px; margin: 2px; border-radius: 6px; }
-QScrollBar::handle:vertical { background: #8a6a46; min-height: 30px; border-radius: 6px; }
+QScrollBar:vertical { background: #261d14; width: 16px; margin: 2px; border-radius: 6px; }
+QScrollBar::handle:vertical { background: #8a6a46; min-height: 36px; border-radius: 7px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QScrollBar:horizontal { background: #2f2419; height: 16px; margin: 2px; border-radius: 6px; }
+QScrollBar::handle:horizontal { background: #8a6a46; min-width: 36px; border-radius: 7px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
 QDialog { background: #221a12; }
 QProgressBar { border: 1px solid #7a5d3f; border-radius: 10px; background: #261d14; text-align: center; min-height: 18px; }
 QProgressBar::chunk { background: #d79342; border-radius: 8px; }
@@ -282,7 +312,7 @@ QPushButton#DangerButton { background: #4e1f47; border: 1px solid #8d3b7d; }
 QComboBox, QLineEdit, QPlainTextEdit, QTextEdit, QListWidget, QTextBrowser { background: #141424; color: #f8f3ff; border: 1px solid #5a4c89; border-radius: 12px; padding: 8px; }
 QListWidget::item:selected { background: #352a52; border: 1px solid #a78bfa; }
 QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical { background: #141424; width: 12px; margin: 2px; border-radius: 6px; }
+QScrollBar:vertical { background: #141424; width: 16px; margin: 2px; border-radius: 6px; }
 QScrollBar::handle:vertical { background: #6f5db7; min-height: 30px; border-radius: 6px; }
 QDialog { background: #11111c; }
 QProgressBar { border: 1px solid #5a4c89; border-radius: 10px; background: #141424; text-align: center; min-height: 18px; }
@@ -302,7 +332,7 @@ QPushButton#DangerButton { background: #ffe5e5; border: 1px solid #ffc8c8; }
 QComboBox, QLineEdit, QPlainTextEdit, QTextEdit, QListWidget, QTextBrowser { background: #ffffff; color: #0f2940; border: 1px solid #c7dcea; border-radius: 12px; padding: 8px; }
 QListWidget::item:selected { background: #dff3ff; border: 1px solid #7dd3fc; }
 QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical { background: #edf7fc; width: 12px; margin: 2px; border-radius: 6px; }
+QScrollBar:vertical { background: #edf7fc; width: 16px; margin: 2px; border-radius: 6px; }
 QScrollBar::handle:vertical { background: #b6d7e7; min-height: 30px; border-radius: 6px; }
 QDialog { background: #eef7fb; }
 QProgressBar { border: 1px solid #c7dcea; border-radius: 10px; background: #ffffff; text-align: center; min-height: 18px; }

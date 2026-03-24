@@ -17,7 +17,7 @@ from typing import Callable, List, Optional
 
 import markdown
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal, QSize, QUrl, QTimer, QMarginsF
-from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QFont, QTextOption, QTextDocument, QPageLayout, QPageSize
+from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QFont, QFontMetrics, QTextOption, QTextDocument, QPageLayout, QPageSize, QShortcut, QKeySequence
 from PyQt6.QtPrintSupport import QPrinter
 
 from PyQt6.QtWidgets import (
@@ -202,12 +202,16 @@ def message_content_to_html(text: str, is_assistant: bool) -> str:
     html_text = markdown.markdown(safe_text, extensions=["fenced_code", "tables"])
     css = """
     <style>
-        body { font-family: 'Segoe UI', 'Inter', sans-serif; line-height: 1.45; }
-        p { margin: 0 0 0.7em 0; }
+        body { font-family: 'Segoe UI', 'Inter', sans-serif; line-height: 1.5; margin: 0; padding: 0 0 8px 0; }
+        p { margin: 0 0 0.72em 0; }
+        p:last-child { margin-bottom: 0.15em; }
         pre { background: rgba(0,0,0,0.22); padding: 10px; border-radius: 10px; overflow-x: auto; }
         code { background: rgba(0,0,0,0.16); padding: 2px 4px; border-radius: 6px; }
         a { color: #7ab3ff; text-decoration: none; }
-        ul, ol { margin-top: 0.3em; }
+        ul, ol { margin-top: 0.3em; margin-bottom: 0.55em; }
+        li:last-child { margin-bottom: 0.15em; }
+        table { border-collapse: collapse; margin-bottom: 0.55em; }
+        th, td { padding: 4px 8px; }
     </style>
     """
     return css + html_text
@@ -412,8 +416,8 @@ class BubbleWidget(QFrame):
 
         self.card = QFrame()
         self.card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self.card.setMaximumWidth(980 if is_assistant else 760)
-        self.card.setMinimumWidth(460 if is_assistant else 280)
+        self.card.setMaximumWidth(1120 if is_assistant else 820)
+        self.card.setMinimumWidth(500 if is_assistant else 300)
         card_layout = QVBoxLayout(self.card)
         card_layout.setContentsMargins(12, 10, 12, 10)
         card_layout.setSpacing(8)
@@ -568,12 +572,12 @@ class BubbleWidget(QFrame):
         try:
             available = max(320, self.width() - 56)
             if self.is_assistant:
-                target = min(1400, max(520, int(available * 0.72)))
+                target = min(1520, max(560, int(available * 0.78)))
                 target = min(target, available)
                 self.card.setMinimumWidth(target)
                 self.card.setMaximumWidth(target)
             else:
-                target = min(900, max(280, int(available * 0.52)))
+                target = min(980, max(300, int(available * 0.58)))
                 target = min(target, available)
                 self.card.setMinimumWidth(280)
                 self.card.setMaximumWidth(target)
@@ -586,7 +590,7 @@ class BubbleWidget(QFrame):
             doc = self.browser.document()
             width = max(160, self.browser.viewport().width())
             doc.setTextWidth(width)
-            height = int(doc.size().height()) + 14
+            height = int(doc.size().height()) + 28
             height = max(56, height)
             self.browser.setMinimumHeight(height)
             self.browser.setMaximumHeight(height)
@@ -820,7 +824,8 @@ class SettingsDialog(QDialog):
         self.open_tts_setup_callback = open_tts_setup_callback
         self.setWindowTitle(self.t("settings_title", "Einstellungen"))
         self.setModal(True)
-        self.resize(760, 760)
+        self.resize(900, 820)
+        self.setMinimumSize(860, 720)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -828,10 +833,12 @@ class SettingsDialog(QDialog):
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         root.addWidget(self.scroll, 1)
 
         self.content = QWidget()
+        self.content.setMinimumWidth(800)
         self.content_layout = QVBoxLayout(self.content)
         self.content_layout.setContentsMargins(4, 4, 4, 4)
         self.content_layout.setSpacing(12)
@@ -875,6 +882,13 @@ class SettingsDialog(QDialog):
         self.tts_backend.setCurrentIndex(backend_index)
         add_row(self.t("tts_backend_label", "TTS Backend"), self.tts_backend)
 
+        tts_tools_row = QHBoxLayout()
+        self.open_tts_setup_btn = QPushButton(self.t("vibevoice_setup_open", "Open VibeVoice setup …"))
+        self.open_tts_setup_btn.clicked.connect(self.open_tts_setup)
+        tts_tools_row.addWidget(self.open_tts_setup_btn)
+        tts_tools_row.addStretch(1)
+        self.content_layout.addLayout(tts_tools_row)
+
         self.tts_hint = QLabel()
         self.tts_hint.setObjectName("SubtleLabel")
         self.tts_hint.setWordWrap(True)
@@ -884,17 +898,26 @@ class SettingsDialog(QDialog):
         add_row(self.t("tts_base_url_label", "TTS Base URL"), self.tts_url)
 
         self.tts_voice = QComboBox()
-        self.tts_voice.setEditable(True)
-        self.tts_voice.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.tts_voice.setEditable(False)
+        self.tts_voice.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
+        self.tts_voice.setMinimumContentsLength(28)
         self.tts_voice_row = add_row(self.t("tts_voice_label", "Sprecher / Stimme (Assistent)"), self.tts_voice)
 
         self.user_tts_voice = QComboBox()
-        self.user_tts_voice.setEditable(True)
-        self.user_tts_voice.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.user_tts_voice.setEditable(False)
+        self.user_tts_voice.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
+        self.user_tts_voice.setMinimumContentsLength(28)
         self.user_tts_voice_row = add_row(self.t("tts_user_voice_label", "Sprecher / Stimme (Benutzer)"), self.user_tts_voice)
 
-        self.tts_model = QLineEdit(self.config["tts_model"])
-        add_row(self.t("tts_model_label", "TTS Modell"), self.tts_model)
+        self.tts_model = QComboBox()
+        self.tts_model.setEditable(True)
+        self.tts_model.addItems(["tts-1-hd", "tts-1"])
+        current_tts_model = str(self.config.get("tts_model", "tts-1-hd") or "tts-1-hd")
+        if self.tts_model.findText(current_tts_model) < 0:
+            self.tts_model.addItem(current_tts_model)
+        self.tts_model.setCurrentText(current_tts_model)
+        self.tts_model.setToolTip(self.t("tts_model_tooltip", "Relevant only for VibeVoice/OpenAI-compatible TTS backends. In most cases you can leave this at 'tts-1-hd'."))
+        self.tts_model_row = add_row(self.t("tts_model_label", "TTS model"), self.tts_model)
 
         self.autoplay = QCheckBox(self.t("autoplay_label", "Audio nach dem Erzeugen direkt abspielen"))
         self.autoplay.setChecked(bool(self.config.get("autoplay_tts", True)))
@@ -976,12 +999,6 @@ class SettingsDialog(QDialog):
         self.system_prompt.setFixedHeight(110)
         add_row(self.t("system_prompt_label", "System-Prompt"), self.system_prompt)
 
-        tts_tools_row = QHBoxLayout()
-        tts_tools_row.addStretch()
-        self.open_tts_setup_btn = QPushButton(self.t("vibevoice_setup_open", "VibeVoice-Setup öffnen …"))
-        self.open_tts_setup_btn.clicked.connect(self.open_tts_setup)
-        tts_tools_row.addWidget(self.open_tts_setup_btn)
-        self.content_layout.addLayout(tts_tools_row)
         self.content_layout.addStretch(1)
 
         self.tts_backend.currentIndexChanged.connect(self.refresh_tts_voice_options)
@@ -1085,7 +1102,7 @@ class SettingsDialog(QDialog):
             hint = self.t("tts_hint_windows_sapi", "Verwendet Windows-Desktop-SAPI und zusätzlich erkannte Windows-/OneCore-Stimmen. Kein externer Download nötig.")
             default_voice = ""
         elif backend == "vibevoice_openai":
-            hint = self.t("tts_hint_vibevoice", "Benötigt den lokalen VibeVoice-Wrapper. Stimmen aus app_data/tts/vibevoice_openai/models/voices werden zusätzlich erkannt; falls sie nur als lokale Datei erscheinen, den Wrapper einmal neu starten. Zusätzliche offizielle Presets können im VibeVoice-Setup heruntergeladen werden.")
+            hint = self.t("tts_hint_vibevoice", "Benötigt den lokalen VibeVoice-Wrapper. Stimmen aus app_data/tts/vibevoice_openai/models/voices werden zusätzlich erkannt; falls sie nur als lokale Datei erscheinen, den Wrapper einmal neu starten. Zusätzliche offizielle Presets werden beim VibeVoice-Install/Update automatisch mitgeladen.")
             default_voice = "Emma"
         else:
             hint = self.t("tts_hint_disabled", "TTS ist deaktiviert.")
@@ -1095,7 +1112,7 @@ class SettingsDialog(QDialog):
                 backend=backend,
                 base_url=self.tts_url.text().strip() or self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
                 voice=current_voice or self.config.get("tts_voice", default_voice),
-                model=self.tts_model.text().strip() or self.config.get("tts_model", "tts-1-hd"),
+                model=self.tts_model.currentText().strip() or self.config.get("tts_model", "tts-1-hd"),
                 audio_format=self.config.get("tts_format", "wav"),
             )
             voice_entries = client.list_voice_entries()
@@ -1119,6 +1136,7 @@ class SettingsDialog(QDialog):
         visible = backend != "disabled"
         self.tts_voice_row.setVisible(visible)
         self.user_tts_voice_row.setVisible(visible)
+        self.tts_model_row.setVisible(backend == "vibevoice_openai")
         self.sapi_group.setVisible(backend == "windows_sapi")
         self.open_tts_setup_btn.setVisible(backend == "vibevoice_openai")
 
@@ -1158,7 +1176,7 @@ class SettingsDialog(QDialog):
         else:
             data["tts_voice"] = voice_value or "Emma"
             data["tts_user_voice"] = user_voice_value or data["tts_voice"]
-        data["tts_model"] = self.tts_model.text().strip() or "tts-1-hd"
+        data["tts_model"] = self.tts_model.currentText().strip() or "tts-1-hd"
         data["autoplay_tts"] = self.autoplay.isChecked()
         data["auto_read_assistant_responses"] = self.auto_read_responses.isChecked()
         data["read_all_include_names"] = self.read_all_include_names.isChecked()
@@ -1257,17 +1275,14 @@ class TTSSetupDialog(QDialog):
         root.addLayout(progress_row)
 
         button_row = QHBoxLayout()
-        self.auto_setup_btn = QPushButton(self.t("tts_setup_btn_auto", "Automatisch prüfen & einrichten"))
+        self.auto_setup_btn = QPushButton(self.t("tts_setup_btn_auto", "VibeVoice install / update"))
         self.auto_setup_btn.setObjectName("AccentButton")
         self.auto_setup_btn.clicked.connect(lambda: self.start_action("auto_setup"))
-        self.download_voices_btn = QPushButton(self.t("tts_setup_btn_download_voices", "Additional voices …"))
-        self.download_voices_btn.clicked.connect(lambda: self.start_action("download_voices"))
-        self.start_btn = QPushButton(self.t("tts_setup_btn_start", "Server starten"))
+        self.start_btn = QPushButton(self.t("tts_setup_btn_start", "Start server"))
         self.start_btn.clicked.connect(lambda: self.start_action("start"))
         self.stop_btn = QPushButton(self.t("tts_setup_btn_stop", "Server stoppen"))
         self.stop_btn.clicked.connect(lambda: self.start_action("stop"))
         button_row.addWidget(self.auto_setup_btn)
-        button_row.addWidget(self.download_voices_btn)
         button_row.addWidget(self.start_btn)
         button_row.addWidget(self.stop_btn)
         root.addLayout(button_row)
@@ -1369,14 +1384,14 @@ class TTSSetupDialog(QDialog):
         if "beende tts-server" in lower or "stopping tts server" in lower:
             self._set_progress(max(self.progress_bar.value(), 92), self.t("tts_setup_progress_stopping", "Server wird gestoppt …"))
         if "abgeschlossen" in lower or "finished" in lower or "antwortet bereits" in lower or "responded after" in lower:
-            self._set_progress(100, self.t("tts_setup_progress_finalizing", "Abschluss …"))
+            self._set_progress(max(self.progress_bar.value(), 95), self.t("tts_setup_progress_finalizing", "Final checks …"))
 
     def _tick_elapsed(self) -> None:
         self._elapsed_seconds += 1
         self.elapsed_label.setText(self.t("tts_setup_elapsed", "Verstrichen: {seconds} s").format(seconds=self._elapsed_seconds))
 
     def set_busy(self, busy: bool) -> None:
-        for btn in [self.auto_setup_btn, self.download_voices_btn, self.start_btn, self.stop_btn, self.open_folder_btn, self.open_log_btn]:
+        for btn in [self.auto_setup_btn, self.start_btn, self.stop_btn, self.open_folder_btn, self.open_log_btn]:
             btn.setEnabled(not busy)
         if busy:
             self._elapsed_seconds = 0
@@ -1391,7 +1406,7 @@ class TTSSetupDialog(QDialog):
             QMessageBox.information(self, self.t("tts_setup_running_title", "Bitte warten"), self.t("tts_setup_running_text", "Es läuft bereits eine TTS-Setup-Aktion."))
             return
         action_name = {
-            "auto_setup": self.t("tts_setup_action_auto", "Automatisches Setup"),
+            "auto_setup": self.t("tts_setup_action_auto", "VibeVoice install / update"),
             "start": self.t("tts_setup_action_start", "Serverstart"),
             "stop": self.t("tts_setup_action_stop", "Server stoppen"),
             "install": self.t("tts_setup_action_install", "Installieren / Aktualisieren"),
@@ -1411,6 +1426,7 @@ class TTSSetupDialog(QDialog):
         self.worker.finished.connect(self.on_action_finished)
         self.worker.finished.connect(self.worker_thread.quit)
         self.worker_thread.finished.connect(self.cleanup_worker)
+        self.send_btn.setEnabled(False)
         self.worker_thread.start()
 
     def on_action_finished(self, success: bool, message: str) -> None:
@@ -1418,6 +1434,8 @@ class TTSSetupDialog(QDialog):
         self.refresh_status()
         self.set_busy(False)
         self.progress_bar.setValue(100 if success else max(self.progress_bar.value(), 1))
+        if success:
+            self.current_step_label.setText(self.t("tts_setup_ready_to_start", "VibeVoice installation / update completed. You can now start the VibeVoice server."))
         if success:
             self.parent().statusBar().showMessage(message, 4000) if self.parent() and hasattr(self.parent(), 'statusBar') else None
         else:
@@ -1467,6 +1485,7 @@ class MainWindow(QMainWindow):
         self.current_audio_sentences: List[str] = []
         self.current_audio_sentence_index = 0
         self.audio_generation_id = 0
+        self.audio_stop_requested = False
         self.audio_playback_thread: Optional[threading.Thread] = None
         self.last_requested_model = (self.config.get("last_model", "") or "").strip()
         self.pending_auto_answer_source = ""
@@ -1514,6 +1533,8 @@ class MainWindow(QMainWindow):
             self.open_session(self.sessions[0].session_id)
         else:
             self.create_new_session()
+
+        self._set_request_feedback("idle")
 
     def t(self, key: str, default: Optional[str] = None) -> str:
         return self.translations.get(key, default or key)
@@ -1572,15 +1593,20 @@ class MainWindow(QMainWindow):
         frame.setObjectName("HeaderBar")
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
 
-        self.status_label = QLabel(self.t("status_checking", "Status: prüfe Ollama …"))
+        self.status_label = QLabel(self.t("status_checking", "Checking Ollama status …"))
         self.status_label.setObjectName("SubtleLabel")
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        self.status_label.setMaximumWidth(180)
+        self.status_label.setToolTip("")
         layout.addWidget(self.status_label)
 
         layout.addStretch()
 
         self.model_combo = QComboBox()
-        self.model_combo.setMinimumWidth(280)
+        self.model_combo.setMinimumWidth(210)
+        self.model_combo.setMaximumWidth(260)
         self.model_combo.currentTextChanged.connect(self._model_changed)
         self.model_label = QLabel(self.t("model_label", "Modell"))
         layout.addWidget(self.model_label)
@@ -1588,25 +1614,37 @@ class MainWindow(QMainWindow):
 
         self.refresh_models_btn = QPushButton(self.t("refresh_models", "Modelle neu laden"))
         self.refresh_models_btn.clicked.connect(self.refresh_models)
+        self.refresh_models_btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.refresh_models_btn)
 
         self.read_all_btn = QPushButton(self.t("read_all_button", "Alles vorlesen"))
         self.read_all_btn.clicked.connect(self.read_aloud_conversation)
+        self.read_all_btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.read_all_btn)
 
         self.audio_stop_header_btn = QPushButton(self.t("stop_audio_button", "Audio stoppen"))
         self.audio_stop_header_btn.clicked.connect(self.stop_audio_playback)
+        self.audio_stop_header_btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.audio_stop_header_btn)
 
         self.export_pdf_btn = QPushButton(self.t("export_pdf_button", "Chat exportieren"))
         self.export_pdf_btn.clicked.connect(self.export_current_chat_pdf)
+        self.export_pdf_btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.export_pdf_btn)
 
         self.settings_btn = QPushButton(self.t("settings_button", "Einstellungen"))
         self.settings_btn.clicked.connect(self.show_settings)
+        self.settings_btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.settings_btn)
 
         return frame
+
+    def _set_header_status(self, raw_text: str) -> None:
+        text = raw_text.strip()
+        metrics = QFontMetrics(self.status_label.font())
+        elided = metrics.elidedText(text, Qt.TextElideMode.ElideRight, max(120, self.status_label.maximumWidth() - 8))
+        self.status_label.setText(elided)
+        self.status_label.setToolTip(text)
 
     def _build_chat_surface(self) -> QFrame:
         frame = QFrame()
@@ -1640,6 +1678,16 @@ class MainWindow(QMainWindow):
         self.input_box.setFixedHeight(120)
         self.input_box.textChanged.connect(self._on_input_text_changed)
         layout.addWidget(self.input_box)
+
+        self.send_shortcut_return = QShortcut(QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Return), self.input_box)
+        self.send_shortcut_return.activated.connect(self.send_message)
+        self.send_shortcut_enter = QShortcut(QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Enter), self.input_box)
+        self.send_shortcut_enter.activated.connect(self.send_message)
+
+        self.composer_state_label = QLabel(self.t("composer_state_idle", "Bereit."))
+        self.composer_state_label.setObjectName("SubtleLabel")
+        self.composer_state_label.setWordWrap(True)
+        layout.addWidget(self.composer_state_label)
 
         self.auto_answer_checkbox = QCheckBox(self.t("auto_answer_checkbox", "Auto Answer (ELIZA)"))
         self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
@@ -1681,6 +1729,8 @@ class MainWindow(QMainWindow):
         self.settings_btn.setText(self.t("settings_button", "Einstellungen"))
         self.input_box.setPlaceholderText(self.t("composer_placeholder", "Nachricht schreiben …  (Strg+Enter zum Senden)"))
         self.composer_hint.setText(self.t("composer_hint", "Ollama wird lokal angesprochen. Antworten werden gestreamt."))
+        if self.worker_thread is None:
+            self.composer_state_label.setText(self.t("composer_state_idle", "Bereit."))
         self.stop_btn.setText(self.t("stop_button", "Stop"))
         self.send_btn.setText(self.t("send_button", "Senden"))
         self.auto_answer_checkbox.setText(self.t("auto_answer_checkbox", "Auto Answer (ELIZA)"))
@@ -1694,6 +1744,28 @@ class MainWindow(QMainWindow):
             self.send_message()
             return
         super().keyPressEvent(event)
+
+    def _set_request_feedback(self, state: str) -> None:
+        mapping = {
+            "idle": self.t("composer_state_idle", "Bereit."),
+            "sent": self.t("composer_state_sent", "Anfrage gesendet … Antwort wird vorbereitet."),
+            "waiting": self.t("composer_state_waiting", "LLM antwortet … erste Tokens werden erwartet."),
+            "streaming": self.t("composer_state_streaming", "LLM antwortet gerade …"),
+            "finished": self.t("composer_state_finished", "Antwort abgeschlossen."),
+            "failed": self.t("composer_state_failed", "Antwort fehlgeschlagen."),
+        }
+        if hasattr(self, "composer_state_label"):
+            self.composer_state_label.setText(mapping.get(state, mapping["idle"]))
+
+    def _flush_chat_ui(self) -> None:
+        try:
+            self.chat_host.adjustSize()
+            self.chat_host.updateGeometry()
+            self.chat_scroll.widget().updateGeometry()
+            QApplication.processEvents()
+        except Exception:
+            pass
+        QTimer.singleShot(0, self.scroll_to_bottom)
 
     def _on_session_clicked(self, item: QListWidgetItem) -> None:
         session_id = item.data(Qt.ItemDataRole.UserRole)
@@ -1741,6 +1813,8 @@ class MainWindow(QMainWindow):
         else:
             self.create_new_session()
 
+        self._set_request_feedback("idle")
+
     def open_session(self, session_id: str) -> None:
         target = None
         for session in self.store.list_sessions():
@@ -1756,13 +1830,14 @@ class MainWindow(QMainWindow):
         self.clear_chat_layout()
         for message in target.messages:
             self.add_message_bubble(message)
-        self.scroll_to_bottom()
+        self._flush_chat_ui()
 
         for i in range(self.session_list.count()):
             item = self.session_list.item(i)
             if item.data(Qt.ItemDataRole.UserRole) == session_id:
                 self.session_list.setCurrentItem(item)
                 break
+        self._set_request_feedback("idle")
 
     def clear_chat_layout(self) -> None:
         while self.chat_layout.count() > 1:
@@ -1795,15 +1870,15 @@ class MainWindow(QMainWindow):
             client = OllamaClient(self.config.get("ollama_base_url", "http://127.0.0.1:11434").strip())
             models = client.get_models()
             if not models:
-                self.status_label.setText(self.t("status_ollama_ok_no_models", "Status: Ollama erreichbar, aber keine Modelle gefunden."))
+                self._set_header_status(self.t("status_ollama_ok_no_models", "Ollama reachable, but no models were found."))
             else:
                 self.model_combo.addItems(models)
                 last_model = self.config.get("last_model", "").strip() or current_text
                 if last_model and last_model in models:
                     self.model_combo.setCurrentText(last_model)
-                self.status_label.setText(self.t("status_ollama_ok_models", "Status: Ollama erreichbar · {count} Modell(e)").format(count=len(models)))
+                self._set_header_status(self.t("status_ollama_ok_models", "Ollama reachable · {count} model(s)").format(count=len(models)))
         except Exception as exc:
-            self.status_label.setText(self.t("status_ollama_not_reachable", "Status: Ollama nicht erreichbar · {error}").format(error=exc))
+            self._set_header_status(self.t("status_ollama_not_reachable", "Ollama offline · {error}").format(error=exc))
         finally:
             self.model_combo.blockSignals(False)
 
@@ -1859,8 +1934,12 @@ class MainWindow(QMainWindow):
         self.current_session.model_name = self.model_combo.currentText().strip()
         self.store.save(self.current_session)
         self.refresh_sessions_ui()
-        self.add_message_bubble(user_message)
-        self.scroll_to_bottom()
+        bubble = self.add_message_bubble(user_message)
+        try:
+            bubble.show()
+        except Exception:
+            pass
+        self._flush_chat_ui()
         return user_message
 
     def _begin_assistant_request(self) -> None:
@@ -1871,13 +1950,19 @@ class MainWindow(QMainWindow):
         self.current_assistant_bubble = self.add_message_bubble(assistant_message)
         if self.current_assistant_bubble is not None:
             self.current_assistant_bubble.set_loading(True, selected_model, switched_model=bool(previous_model and previous_model != selected_model))
+            try:
+                self.current_assistant_bubble.show()
+            except Exception:
+                pass
         self.current_assistant_text = ""
         self.last_requested_model = selected_model
 
         messages = self.session_messages_for_api()[:-1]
+        self._set_request_feedback("sent")
+        self._flush_chat_ui()
         self.start_worker(messages)
         self.stop_btn.setEnabled(True)
-        self.scroll_to_bottom()
+        self._set_request_feedback("waiting")
 
     def _schedule_auto_answer(self, source_text: str) -> None:
         if not self.auto_answer_checkbox.isChecked():
@@ -1945,16 +2030,19 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self.worker_thread.quit)
         self.worker.failed.connect(self.worker_thread.quit)
         self.worker_thread.finished.connect(self.cleanup_worker)
+        self.send_btn.setEnabled(False)
         self.worker_thread.start()
 
     def on_worker_chunk(self, text: str) -> None:
         self.current_assistant_text += text
         if self.current_assistant_bubble is not None:
             self.current_assistant_bubble.set_content(self.current_assistant_text)
-        self.scroll_to_bottom()
+        self._set_request_feedback("streaming")
+        self._flush_chat_ui()
 
     def on_worker_finished(self) -> None:
         self.stop_btn.setEnabled(False)
+        self.send_btn.setEnabled(True)
         final_text = self.current_assistant_text.strip()
         if not final_text:
             final_text = 'Keine Textantwort von Ollama empfangen. Bitte Modell/Prompt prüfen oder erneut senden.'
@@ -1974,10 +2062,13 @@ class MainWindow(QMainWindow):
                 self.pending_auto_answer_source = final_text
             else:
                 self._schedule_auto_answer(final_text)
+        self._set_request_feedback("finished")
+        self._flush_chat_ui()
         self.statusBar().showMessage(self.t("answer_finished", "Antwort abgeschlossen."), 2500)
 
     def on_worker_failed(self, message: str) -> None:
         self.stop_btn.setEnabled(False)
+        self.send_btn.setEnabled(True)
         self.auto_answer_timer.stop()
         self.pending_auto_answer_source = ""
         self.pending_auto_submit_message = None
@@ -1988,6 +2079,8 @@ class MainWindow(QMainWindow):
         if self.current_session and self.current_session.messages:
             self.current_session.messages[-1].content = f"Fehler bei der Ollama-Anfrage:\n\n{message}"
             self.store.save(self.current_session)
+        self._set_request_feedback("failed")
+        self._flush_chat_ui()
         self.statusBar().showMessage(self.t("ollama_failed", "Ollama-Anfrage fehlgeschlagen."), 4000)
 
 
@@ -2047,6 +2140,7 @@ class MainWindow(QMainWindow):
         self.current_audio_text = ''
         self.current_audio_sentences = []
         self.current_audio_sentence_index = 0
+        self.audio_stop_requested = False
         self.audio_playback_thread = None
 
     def _start_windows_sapi_sentence_playback(self, message: ChatMessage, start_sentence_index: int = 0) -> None:
@@ -2061,6 +2155,7 @@ class MainWindow(QMainWindow):
             return
 
         start_sentence_index = max(0, min(start_sentence_index, len(sentences) - 1))
+        self.audio_stop_requested = False
         self.audio_generation_id += 1
         generation_id = self.audio_generation_id
         self.current_audio_message = message
@@ -2102,6 +2197,11 @@ class MainWindow(QMainWindow):
                         raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}')
                     finally:
                         self.current_playback_stoppable = False
+                    if self.audio_stop_requested:
+                        if gen_id == self.audio_generation_id:
+                            self._clear_audio_state()
+                            self.audio_status_signal.emit(self.t("audio_stopped", "Audio gestoppt."))
+                        return
                     if gen_id != self.audio_generation_id:
                         return
                 if gen_id == self.audio_generation_id:
@@ -2117,6 +2217,7 @@ class MainWindow(QMainWindow):
         self.audio_playback_thread.start()
 
     def _start_external_segments_playback(self, segments: List[dict], backend: str, primary_message: Optional[ChatMessage] = None) -> None:
+        self.audio_stop_requested = False
         self.audio_generation_id += 1
         generation_id = self.audio_generation_id
         self.current_audio_message = primary_message
@@ -2204,6 +2305,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.t("audio_playback_started", "Sprachausgabe gestartet."), 2500)
 
     def _start_windows_sapi_segments_playback(self, segments: List[dict]) -> None:
+        self.audio_stop_requested = False
         self.audio_generation_id += 1
         generation_id = self.audio_generation_id
         self.current_audio_message = None
@@ -2251,6 +2353,11 @@ class MainWindow(QMainWindow):
                             raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}')
                         finally:
                             self.current_playback_stoppable = False
+                        if self.audio_stop_requested:
+                            if gen_id == self.audio_generation_id:
+                                self._clear_audio_state()
+                                self.audio_status_signal.emit(self.t("audio_stopped", "Audio gestoppt."))
+                            return
                 if gen_id == self.audio_generation_id:
                     self._clear_audio_state()
                     self.audio_status_signal.emit(self.t("audio_finished", "Sprachausgabe beendet."))
@@ -2399,30 +2506,44 @@ class MainWindow(QMainWindow):
     def stop_audio_playback(self, silent: bool = False, preserve_state: bool = False) -> None:
         stoppable = False
         had_audio = self.current_audio_message is not None or self.audio_playback_thread is not None or bool(self.current_audio_backend)
-        if had_audio:
-            self.audio_generation_id += 1
-        try:
-            if sys.platform.startswith('win') and self.current_playback_stoppable:
-                import winsound
-                try:
-                    winsound.PlaySound(None, winsound.SND_PURGE)
-                except Exception:
-                    winsound.PlaySound(None, 0)
-                stoppable = True
-                self.current_playback_stoppable = False
-        except Exception:
-            stoppable = False
+        deferred_windows_sapi_stop = (
+            had_audio
+            and self.current_audio_backend == 'windows_sapi'
+            and self.audio_playback_thread is not None
+            and self.audio_playback_thread.is_alive()
+            and not preserve_state
+        )
+        if deferred_windows_sapi_stop:
+            self.audio_stop_requested = True
+            self.current_playback_stoppable = False
+            stoppable = True
+        else:
+            if had_audio:
+                self.audio_generation_id += 1
+            try:
+                if sys.platform.startswith('win') and self.current_playback_stoppable:
+                    import winsound
+                    try:
+                        winsound.PlaySound(None, winsound.SND_PURGE)
+                    except Exception:
+                        winsound.PlaySound(None, 0)
+                    stoppable = True
+                    self.current_playback_stoppable = False
+            except Exception:
+                stoppable = False
 
-        if not preserve_state and had_audio:
-            self._clear_audio_state()
+            if not preserve_state and had_audio:
+                self._clear_audio_state()
 
         if not silent:
-            if stoppable or had_audio:
+            if deferred_windows_sapi_stop:
+                self.statusBar().showMessage(self.t("audio_stop_after_sentence", "Audio stoppt nach dem aktuellen Satz."), 3000)
+            elif stoppable or had_audio:
                 self.statusBar().showMessage(self.t("audio_stopped", "Audio gestoppt."), 2500)
             else:
                 self.statusBar().showMessage(self.t("audio_stop_not_available", "Das aktuelle Playback lässt sich nicht direkt stoppen."), 4000)
 
-        if not preserve_state and had_audio:
+        if not preserve_state and had_audio and not deferred_windows_sapi_stop:
             if self.pending_auto_submit_message is not None and self.auto_answer_waiting_for_user_audio and self.worker_thread is None:
                 self.auto_answer_waiting_for_user_audio = False
                 self.pending_auto_submit_message = None

@@ -162,6 +162,15 @@ class VibeVoiceManager:
                 continue
         return data.decode('utf-8', errors='replace')
 
+    def _subprocess_window_kwargs(self, *, hide: bool = True) -> dict:
+        if os.name != "nt":
+            return {}
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0 if hide else 6
+        flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if hide else 0
+        return {'startupinfo': startupinfo, 'creationflags': flags}
+
     def is_pid_running(self) -> bool:
         if not self.pid_path.exists():
             return False
@@ -176,6 +185,7 @@ class VibeVoiceManager:
                     capture_output=True,
                     text=False,
                     timeout=10,
+                    **self._subprocess_window_kwargs(hide=True),
                 )
             except Exception:
                 return False
@@ -396,6 +406,9 @@ class VibeVoiceManager:
         creationflags = 0
         if os.name == "nt":
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        popen_kwargs = self._subprocess_window_kwargs(hide=True)
+        if creationflags:
+            popen_kwargs['creationflags'] = popen_kwargs.get('creationflags', 0) | creationflags
         process = subprocess.Popen(
             cmd,
             cwd=self.repo_dir,
@@ -403,7 +416,7 @@ class VibeVoiceManager:
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
-            creationflags=creationflags,
+            **popen_kwargs,
         )
         self.pid_path.write_text(str(process.pid), encoding="utf-8")
         log(self.t("vv_started_pid", "Prozess gestartet mit PID {pid}.").format(pid=process.pid))
@@ -449,6 +462,7 @@ class VibeVoiceManager:
             stderr=subprocess.STDOUT,
             text=False,
             bufsize=0,
+            **self._subprocess_window_kwargs(hide=True),
         )
         assert process.stdout is not None
         buffer = b''
