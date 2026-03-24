@@ -1,46 +1,54 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 title OllamaVibeDesk Installer
 
 cd /d "%~dp0"
 
-echo ============================================
-echo   OllamaVibeDesk - Windows Installer
-echo ============================================
+for /f %%E in ('echo prompt $E^| cmd') do set "ESC=%%E"
+set "C_RESET=%ESC%[0m"
+set "C_INFO=%ESC%[96m"
+set "C_WARN=%ESC%[93m"
+set "C_OK=%ESC%[92m"
+set "C_ERR=%ESC%[91m"
+set "C_DIM=%ESC%[90m"
+
+echo !C_INFO!============================================!C_RESET!
+echo !C_INFO!  OllamaVibeDesk - Windows Installer!C_RESET!
+echo !C_INFO!============================================!C_RESET!
 echo.
 
 where py >nul 2>nul
 if errorlevel 1 (
-    echo Python launcher "py" was not found.
-    echo Please install Python 3.10+ and enable "Add Python to PATH" or the Python Launcher.
+    echo !C_ERR!Python launcher "py" was not found.!C_RESET!
+    echo !C_WARN!Please install Python 3.10+ and enable "Add Python to PATH" or the Python Launcher.!C_RESET!
     pause
     exit /b 1
 )
 
 if not exist ".venv" (
-    echo [1/4] Creating virtual environment...
+    echo !C_INFO![1/4] Creating virtual environment...!C_RESET!
     py -3 -m venv .venv
     if errorlevel 1 (
-        echo Failed to create the virtual environment.
+        echo !C_ERR!Failed to create the virtual environment.!C_RESET!
         pause
         exit /b 1
     )
 ) else (
-    echo [1/4] Virtual environment already exists.
+    echo !C_DIM![1/4] Virtual environment already exists.!C_RESET!
 )
 
-echo [2/4] Updating pip...
+echo !C_INFO![2/4] Updating pip...!C_RESET!
 call ".venv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
 if errorlevel 1 (
-    echo Failed to update pip.
+    echo !C_ERR!Failed to update pip.!C_RESET!
     pause
     exit /b 1
 )
 
-echo [3/4] Installing dependencies...
+echo !C_INFO![3/4] Installing dependencies...!C_RESET!
 call ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 (
-    echo Failed to install Python packages.
+    echo !C_ERR!Failed to install Python packages.!C_RESET!
     pause
     exit /b 1
 )
@@ -49,17 +57,19 @@ if not exist "app_data" mkdir "app_data"
 if not exist "app_data\audio" mkdir "app_data\audio"
 if not exist "app_data\cache" mkdir "app_data\cache"
 if not exist "app_data\chats" mkdir "app_data\chats"
+if not exist "app_data\logs" mkdir "app_data\logs"
 
-echo [4/4] Installation complete.
+echo !C_OK![4/4] Installation complete.!C_RESET!
 echo.
-echo The app will start automatically soon.
-echo Press N during the countdown to cancel the first launch.
+echo !C_WARN!The app will start automatically soon. Press N to cancel the first launch.!C_RESET!
 for /L %%S in (10,-1,1) do (
-    echo Starting automatically with run_windows.bat in %%S seconds... Press N to cancel.
+    <nul set /p "=!ESC![2K!ESC![1G!C_WARN!Autostart in %%S s (N=cancel)!C_RESET!"
     choice /C NS /N /T 1 /D S >nul
-    if errorlevel 1 if not errorlevel 2 (
+    if errorlevel 2 (
+        rem continue countdown
+    ) else (
         echo.
-        echo First launch canceled.
+        echo !C_DIM!First launch canceled.!C_RESET!
         goto end_install
     )
 )
