@@ -1,6 +1,6 @@
 # OllamaVibeDesk
 
-Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **theme support**, **chat history**, **streaming responses**, and optional **local TTS playback/export** through a **VibeVoice-Realtime-0.5B compatible server**.
+Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **theme support**, **chat history**, **automatic chat**, **streaming responses**, and optional **local TTS playback/export** through a **VibeVoice compatible server**.
 
 
 ## Main features
@@ -15,7 +15,7 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - optional WAV export via a local TTS endpoint
 - Windows installer and launcher batch files
 - no cloud requirement for normal chat usage once local services are present
-- multiple language support (currently: german, english, french, spanish, russian)
+- multiple interface language support (currently: DE/EN/ES/FR/HI/IT/JA/KO/NL/PL/PT/RU)
 - different voice output speakers for human and AI (as Sapi or VibeVoice Speakers)
 - automatic VibeVoice server setup included
 - auto answer function to act like the human based of the ELIZA algorythm to automaticly continue a chat dialog
