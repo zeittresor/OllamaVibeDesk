@@ -432,6 +432,13 @@ class VibeVoiceManager:
         log(self.t("vv_no_health_yet", "Noch keine Health-Antwort. Das ist beim ersten Start möglich, während Modelle heruntergeladen oder initialisiert werden."))
         log(self.t("vv_check_log", "Bitte bei Bedarf die Logdatei prüfen: {path}").format(path=self.log_path))
 
+    def start_server_and_wait(self, log: Callable[[str], None], max_wait: int = 120) -> tuple[bool, str]:
+        self.start_server(log)
+        ok, msg = self.healthcheck(timeout=2.0)
+        if ok:
+            return True, msg
+        return self.wait_until_healthy(log, max_wait=max_wait, poll_seconds=2.0)
+
     def stop_server(self, log: Callable[[str], None]) -> None:
         if not self.pid_path.exists():
             raise RuntimeError(self.t("vv_no_pid", "Keine gespeicherte PID gefunden."))

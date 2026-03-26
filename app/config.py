@@ -47,6 +47,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "read_all_include_names": False,
     "user_display_name": "",
     "assistant_display_name": "",
+    "strip_emojis_for_tts": True,
+    "chat_max_tokens": 512,
+    "auto_answer_max_rounds": 0,
+    "context_message_limit": 40,
+    "tts_voice_defaults_initialized": False,
 }
 
 
@@ -146,9 +151,6 @@ def ensure_default_sapi_lexicon() -> None:
 
 
 def ensure_default_auto_answer_phrases() -> None:
-    if AUTO_ANSWER_PATH.exists():
-        return
-
     default_data = {
         "enabled": True,
         "phrases": {
@@ -189,6 +191,26 @@ def ensure_default_auto_answer_phrases() -> None:
             ]
         }
     }
+    if AUTO_ANSWER_PATH.exists():
+        try:
+            existing = json.loads(AUTO_ANSWER_PATH.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                phrases = existing.setdefault("phrases", {})
+                for code, items in default_data.get("phrases", {}).items():
+                    current = phrases.setdefault(code, [])
+                    if isinstance(current, list):
+                        seen = {str(x).strip() for x in current}
+                        for item in items:
+                            if item not in seen:
+                                current.append(item)
+                                seen.add(item)
+                for key, value in default_data.items():
+                    if key != "phrases" and key not in existing:
+                        existing[key] = value
+                AUTO_ANSWER_PATH.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+                return
+        except Exception:
+            pass
     AUTO_ANSWER_PATH.write_text(
         json.dumps(default_data, indent=2, ensure_ascii=False),
         encoding="utf-8",
