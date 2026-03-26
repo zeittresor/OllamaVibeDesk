@@ -237,7 +237,10 @@ def default_role_names(language_code: str) -> tuple[str, str]:
     }
     return mapping.get(code, mapping["en"])
 
+
 TOKEN_PRESET_VALUES = [64, 128, 256, 512, 1024, 2048, 4096, 8192]
+AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
+AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 8
 
 
 def nearest_token_preset_index(value: int) -> int:
@@ -252,6 +255,125 @@ def format_token_value(value: int) -> str:
     if amount >= 1024:
         return f"{amount / 1024:.1f}k"
     return str(amount)
+
+
+def default_auto_answer_short_instruction(language_code: str) -> str:
+    code = (language_code or "de").lower()
+    if code.startswith("de"):
+        return "Bitte antworte jeweils kurz, nur zusammenfassend und ohne Aufzählungen."
+    if code.startswith("fr"):
+        return "Veuillez répondre brièvement, uniquement de manière synthétique et sans listes."
+    if code.startswith("es"):
+        return "Por favor, responde siempre de forma breve, solo resumiendo y sin listas."
+    if code.startswith("ru"):
+        return "Пожалуйста, отвечай кратко, только в виде сжатого резюме и без списков."
+    if code.startswith("it"):
+        return "Per favore rispondi sempre in modo breve, solo riassuntivo e senza elenchi."
+    if code.startswith("pt"):
+        return "Por favor, responda sempre de forma breve, apenas resumida e sem listas."
+    if code.startswith("nl"):
+        return "Beantwoord alstublieft steeds kort, alleen samenvattend en zonder opsommingen."
+    if code.startswith("pl"):
+        return "Proszę odpowiadać krótko, wyłącznie podsumowująco i bez list."
+    if code.startswith("hi"):
+        return "कृपया हमेशा संक्षेप में, केवल सार रूप में और बिना सूचियों के उत्तर दें।"
+    if code.startswith("ja"):
+        return "回答は毎回、短く、要約だけで、箇条書きなしでお願いします。"
+    if code.startswith("ko"):
+        return "항상 짧고 요약만 하며 목록 없이 답변해 주세요."
+    return "Please answer briefly, only in summary form, and without bullet lists."
+
+
+def auto_answer_short_instruction(config: dict | None, language_code: str) -> str:
+    code = (language_code or "de").lower()
+    overrides = {}
+    if isinstance(config, dict):
+        raw = config.get("auto_answer_short_instruction_overrides", {})
+        if isinstance(raw, dict):
+            overrides = raw
+    custom = str(overrides.get(code, "") or "").strip()
+    if not custom and "-" in code:
+        custom = str(overrides.get(code.split("-", 1)[0], "") or "").strip()
+    return custom or default_auto_answer_short_instruction(code)
+
+def hidden_auto_answer_system_instruction(language_code: str, instruction: str) -> str:
+    text = str(instruction or "").strip()
+    if not text:
+        return ""
+    code = (language_code or "de").lower()
+    if code.startswith("de"):
+        return f"Wichtige versteckte Zusatzanweisung nur für die direkt nächste Antwort. Nicht erwähnen oder zitieren. Diese Stilvorgabe hat Vorrang: {text}"
+    if code.startswith("fr"):
+        return f"Instruction cachée importante pour la prochaine réponse uniquement. Ne la mentionnez pas et ne la citez pas. Cette consigne de style est prioritaire : {text}"
+    if code.startswith("es"):
+        return f"Instrucción oculta importante solo para la siguiente respuesta. No la menciones ni la cites. Esta pauta de estilo tiene prioridad: {text}"
+    if code.startswith("ru"):
+        return f"Важная скрытая инструкция только для следующего ответа. Не упоминай и не цитируй её. Это стилевое указание имеет приоритет: {text}"
+    if code.startswith("it"):
+        return f"Importante istruzione nascosta solo per la prossima risposta. Non menzionarla e non citarla. Questa indicazione di stile ha priorità: {text}"
+    if code.startswith("pt"):
+        return f"Instrução oculta importante apenas para a próxima resposta. Não a mencione nem a cite. Esta diretriz de estilo tem prioridade: {text}"
+    if code.startswith("nl"):
+        return f"Belangrijke verborgen instructie alleen voor het eerstvolgende antwoord. Noem of citeer die niet. Deze stijlrichtlijn heeft voorrang: {text}"
+    if code.startswith("pl"):
+        return f"Ważna ukryta instrukcja tylko dla najbliższej odpowiedzi. Nie wspominaj o niej i jej nie cytuj. To zalecenie stylu ma pierwszeństwo: {text}"
+    if code.startswith("hi"):
+        return f"केवल अगली प्रतिक्रिया के लिए महत्वपूर्ण छिपा निर्देश। इसका उल्लेख या उद्धरण न करें। यह शैली-निर्देश प्राथमिक है: {text}"
+    if code.startswith("ja"):
+        return f"次の回答にだけ適用する重要な非表示指示です。言及したり引用したりしないでください。この文体指示を優先してください。{text}"
+    if code.startswith("ko"):
+        return f"다음 답변에만 적용되는 중요한 숨김 지시입니다. 언급하거나 인용하지 마세요. 이 문체 지시를 우선하세요: {text}"
+    return f"Important hidden instruction for the next answer only. Do not mention or quote it. This style instruction takes priority: {text}"
+
+
+def hidden_auto_answer_user_suffix(language_code: str, instruction: str) -> str:
+    text = str(instruction or "").strip()
+    if not text:
+        return ""
+    code = (language_code or "de").lower()
+    if code.startswith("de"):
+        return f"Zusatzanweisung nur für deine direkt nächste Antwort: {text}"
+    if code.startswith("fr"):
+        return f"Consigne supplémentaire pour votre prochaine réponse uniquement : {text}"
+    if code.startswith("es"):
+        return f"Instrucción adicional solo para tu siguiente respuesta: {text}"
+    if code.startswith("ru"):
+        return f"Дополнительная инструкция только для твоего следующего ответа: {text}"
+    if code.startswith("it"):
+        return f"Istruzione aggiuntiva solo per la tua prossima risposta: {text}"
+    if code.startswith("pt"):
+        return f"Instrução adicional apenas para a tua próxima resposta: {text}"
+    if code.startswith("nl"):
+        return f"Extra instructie alleen voor je eerstvolgende antwoord: {text}"
+    if code.startswith("pl"):
+        return f"Dodatkowa instrukcja tylko do twojej następnej odpowiedzi: {text}"
+    if code.startswith("hi"):
+        return f"केवल आपकी अगली प्रतिक्रिया के लिए अतिरिक्त निर्देश: {text}"
+    if code.startswith("ja"):
+        return f"次の回答だけに対する追加指示です: {text}"
+    if code.startswith("ko"):
+        return f"다음 답변에만 대한 추가 지시입니다: {text}"
+    return f"Additional instruction for your next answer only: {text}"
+
+
+def append_hidden_instruction_to_user_text(user_text: str, instruction: str) -> str:
+    base = str(user_text or "").rstrip()
+    extra = str(instruction or "").strip()
+    if not extra:
+        return base
+    if not base:
+        return f"({extra})."
+    return f"{base} ({extra})."
+
+
+def message_visible_content(message: ChatMessage) -> str:
+    display = getattr(message, "display_content", None)
+    if display is None:
+        return message.content
+    return display
+
+
+
 
 
 def resolve_tts_voice_config_defaults(config: dict) -> tuple[dict, bool]:
@@ -322,7 +444,22 @@ def resolve_tts_voice_config_defaults(config: dict) -> tuple[dict, bool]:
     return data, changed
 
 
+def _normalize_compare_text(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).casefold()
 
+
+def _unique_auto_answer_phrases(phrases: list[str], blocked_recent: list[str]) -> list[str]:
+    blocked = {_normalize_compare_text(item) for item in blocked_recent if _normalize_compare_text(item)}
+    result: list[str] = []
+    seen: set[str] = set()
+    for phrase in phrases:
+        cleaned = str(phrase or "").strip()
+        normalized = _normalize_compare_text(cleaned)
+        if not cleaned or not normalized or normalized in blocked or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(cleaned)
+    return result
 
 
 def resolve_display_name(config: dict, role: str) -> str:
@@ -413,14 +550,20 @@ def _reflect_fragment_en(fragment: str) -> str:
     return out
 
 
-def generate_auto_answer(source_text: str, language_code: str, phrase_data: dict | None = None) -> str:
+def generate_auto_answer(
+    source_text: str,
+    language_code: str,
+    phrase_data: dict | None = None,
+    recent_generated_user_messages: list[str] | None = None,
+    eliza_share_percent: int = 60,
+) -> str:
     cleaned = markdown_to_tts_text(source_text or "")
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if not cleaned:
         cleaned = "das" if (language_code or "de").startswith("de") else "that"
     fragment = cleaned[:180].strip(" .!?…:;,-") or cleaned[:180]
     code = (language_code or "de").lower()
-    phrases = []
+    phrases: list[str] = []
     if isinstance(phrase_data, dict):
         phrases_map = phrase_data.get("phrases")
         if isinstance(phrases_map, dict):
@@ -431,11 +574,11 @@ def generate_auto_answer(source_text: str, language_code: str, phrase_data: dict
     if code.startswith("de"):
         reflected = _reflect_fragment_de(fragment)
         templates = [
-            f"Das ist interessant. Erzähl bitte weiter.",
+            "Das ist interessant. Erzähl bitte weiter.",
             f"Warum denkst du {reflected}?",
-            f"Hast du dabei Bedenken?",
-            f"Und wie betrachtest du das kritisch?",
-            f"Interessant — wie könnte sich das noch entwickeln?",
+            "Hast du dabei Bedenken?",
+            "Und wie betrachtest du das kritisch?",
+            "Interessant — wie könnte sich das noch entwickeln?",
         ]
     elif code.startswith("fr"):
         reflected = fragment
@@ -474,10 +617,17 @@ def generate_auto_answer(source_text: str, language_code: str, phrase_data: dict
             "Interesting — how do you think this might develop further?",
         ]
 
-    candidates = [t for t in templates if t.strip()]
-    if phrases:
-        candidates.extend(phrases)
-    return random.choice(candidates).strip()
+    blocked_recent = recent_generated_user_messages or []
+    phrase_candidates = _unique_auto_answer_phrases(phrases, blocked_recent)
+    eliza_candidates = [t for t in templates if t.strip()]
+    eliza_share = max(0, min(100, int(eliza_share_percent or 0)))
+
+    use_eliza = not phrase_candidates or random.randint(1, 100) <= eliza_share
+    if use_eliza and eliza_candidates:
+        return random.choice(eliza_candidates).strip()
+    if phrase_candidates:
+        return random.choice(phrase_candidates).strip()
+    return random.choice(eliza_candidates).strip() if eliza_candidates else ""
 
 
 def pretty_timestamp(value: str) -> str:
@@ -604,7 +754,7 @@ class BubbleWidget(QFrame):
         self.loading_box.setVisible(False)
         card_layout.addWidget(self.loading_box)
 
-        self.set_content(message.content)
+        self.set_content(message_visible_content(message))
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
@@ -612,7 +762,7 @@ class BubbleWidget(QFrame):
 
         if self.on_copy is not None:
             copy_btn = QPushButton(self.translate("copy_button", "Kopieren"))
-            copy_btn.clicked.connect(lambda: self.on_copy(self.message.content))
+            copy_btn.clicked.connect(lambda: self.on_copy(message_visible_content(self.message)))
             actions.addWidget(copy_btn)
 
         if self.on_read_aloud is not None:
@@ -742,7 +892,10 @@ class BubbleWidget(QFrame):
         self.meta_label.setText(self.role_label + " · " + pretty_timestamp(self.message.created_at))
 
     def set_content(self, text: str) -> None:
-        self.message.content = text
+        if self.is_assistant:
+            self.message.content = text
+        else:
+            self.message.display_content = text
         has_visible_text = bool(text.strip())
         if self.is_assistant and has_visible_text:
             self.set_loading(False)
@@ -951,6 +1104,65 @@ class AutoAnswerPhrasesDialog(QDialog):
         self.accept()
 
 
+class AutoAnswerShortPromptDialog(QDialog):
+    def __init__(self, config: dict, language_code: str = "de", parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.language_code = (language_code or "de").strip() or "de"
+        self.translations = load_language_pack(self.language_code)
+        self.setWindowTitle(self.t("auto_answer_short_prompt_dialog_title", "Zusatzprompt für kurze Auto-Answer-Antworten"))
+        self.setModal(True)
+        self.resize(720, 420)
+
+        layout = QVBoxLayout(self)
+
+        language_name = next((name for code, name in available_languages() if code == self.language_code), self.language_code)
+        info = QLabel(
+            self.t(
+                "auto_answer_short_prompt_dialog_info",
+                "Dieser Zusatzprompt wird unsichtbar an das LLM weitergegeben: beim ersten Nutzerbeitrag eines Chats und nach einem automatischen Folge-Chat noch einmal für den nächsten Nutzerbeitrag. Er gilt für die aktuell gewählte Oberflächensprache: {language}.",
+            ).format(language=language_name)
+        )
+        info.setWordWrap(True)
+        info.setObjectName("SubtleLabel")
+        layout.addWidget(info)
+
+        self.editor = QPlainTextEdit()
+        self.editor.setPlaceholderText(default_auto_answer_short_instruction(self.language_code))
+        self.editor.setPlainText(auto_answer_short_instruction(self.config, self.language_code))
+        layout.addWidget(self.editor, 1)
+
+        buttons = QHBoxLayout()
+        self.reset_btn = QPushButton(self.t("reset_default", "Standard wiederherstellen"))
+        self.reset_btn.clicked.connect(self.reset_to_default)
+        buttons.addWidget(self.reset_btn)
+        buttons.addStretch()
+
+        cancel_btn = QPushButton(self.t("cancel", "Abbrechen"))
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton(self.t("save", "Speichern"))
+        save_btn.setObjectName("AccentButton")
+        save_btn.clicked.connect(self.save_and_accept)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(save_btn)
+        layout.addLayout(buttons)
+
+    def t(self, key: str, default: Optional[str] = None) -> str:
+        return self.translations.get(key, default or key)
+
+    def reset_to_default(self) -> None:
+        self.editor.setPlainText(default_auto_answer_short_instruction(self.language_code))
+
+    def save_and_accept(self) -> None:
+        value = self.editor.toPlainText().strip()
+        if not value:
+            value = default_auto_answer_short_instruction(self.language_code)
+        overrides = dict(self.config.get("auto_answer_short_instruction_overrides", {}) or {})
+        overrides[self.language_code] = value
+        self.config["auto_answer_short_instruction_overrides"] = overrides
+        self.accept()
+
+
 class SettingsDialog(QDialog):
     def __init__(self, config: dict, parent: Optional[QWidget] = None, open_tts_setup_callback: Optional[Callable[[], None]] = None) -> None:
         super().__init__(parent)
@@ -1064,6 +1276,11 @@ class SettingsDialog(QDialog):
         self.auto_read_responses.setToolTip(self.t("auto_read_tooltip", "Wenn aktiv, wird nach jeder neuen Assistent-Antwort automatisch TTS erzeugt und abgespielt."))
         self.content_layout.addWidget(self.auto_read_responses)
 
+        self.auto_read_user_inputs = QCheckBox(self.t("auto_read_user_inputs_label", "Eigene manuell gesendete Texte nach dem Senden automatisch vorlesen"))
+        self.auto_read_user_inputs.setChecked(bool(self.config.get("auto_read_user_inputs", False)))
+        self.auto_read_user_inputs.setToolTip(self.t("auto_read_user_inputs_tooltip", "Wenn aktiv, werden manuell eingegebene Benutzertexte direkt nach der Übergabe an das LLM automatisch vorgelesen."))
+        self.content_layout.addWidget(self.auto_read_user_inputs)
+
         self.read_all_include_names = QCheckBox(self.t("read_all_include_names_label", "Bei 'Alles vorlesen' Sprecher-Namen mit vorlesen"))
         self.read_all_include_names.setChecked(bool(self.config.get("read_all_include_names", False)))
         self.content_layout.addWidget(self.read_all_include_names)
@@ -1101,6 +1318,16 @@ class SettingsDialog(QDialog):
         self.strip_emojis.setChecked(bool(self.config.get("strip_emojis_for_tts", True)))
         self.strip_emojis.setToolTip(self.t("strip_emojis_tooltip", "Entfernt Emojis und einfache Emoticons aus dem Vorlesetext, bevor TTS erzeugt wird."))
         self.content_layout.addWidget(self.strip_emojis)
+
+        short_answers_row = QHBoxLayout()
+        self.auto_answer_short_answers = QCheckBox(self.t("auto_answer_short_answers_label", "Kurze Antworten im Auto-Answer-Modus"))
+        self.auto_answer_short_answers.setChecked(bool(self.config.get("auto_answer_short_answers", True)))
+        self.auto_answer_short_answers.setToolTip(self.t("auto_answer_short_answers_tooltip", "Fügt unsichtbar einen Zusatzhinweis hinzu: beim ersten Nutzerbeitrag eines Chats und nach einem automatischen Folge-Chat noch einmal für den nächsten Nutzerbeitrag, damit das Modell kurz und zusammenfassend antwortet."))
+        short_answers_row.addWidget(self.auto_answer_short_answers, 1)
+        self.edit_auto_answer_short_prompt_btn = QPushButton(self.t("edit_auto_answer_short_prompt", "Zusatzprompt bearbeiten …"))
+        self.edit_auto_answer_short_prompt_btn.clicked.connect(self.edit_auto_answer_short_prompt)
+        short_answers_row.addWidget(self.edit_auto_answer_short_prompt_btn)
+        self.content_layout.addLayout(short_answers_row)
 
         limits_frame = QFrame()
         limits_layout = QVBoxLayout(limits_frame)
@@ -1151,6 +1378,39 @@ class SettingsDialog(QDialog):
         self.auto_answer_rounds.setToolTip(self.t("auto_answer_rounds_tooltip", "Begrenzt, wie oft Auto Answer hintereinander antworten darf. 0 bedeutet unbegrenzt."))
         rounds_row.addWidget(self.auto_answer_rounds)
         limits_layout.addLayout(rounds_row)
+
+        eliza_label = QLabel(self.t("auto_answer_eliza_share_label", "ELIZA-Anteil gegenüber Standardsätzen"))
+        eliza_label.setObjectName("SubtleLabel")
+        limits_layout.addWidget(eliza_label)
+        eliza_slider_row = QHBoxLayout()
+        self.auto_answer_eliza_share = QSlider(Qt.Orientation.Horizontal)
+        self.auto_answer_eliza_share.setRange(0, 100)
+        self.auto_answer_eliza_share.setSingleStep(5)
+        self.auto_answer_eliza_share.setPageStep(10)
+        self.auto_answer_eliza_share.setTickInterval(10)
+        self.auto_answer_eliza_share.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.auto_answer_eliza_share.setValue(int(self.config.get("auto_answer_eliza_share", 60) or 60))
+        eliza_slider_row.addWidget(self.auto_answer_eliza_share, 1)
+        self.auto_answer_eliza_share_value = QLabel()
+        self.auto_answer_eliza_share_value.setMinimumWidth(118)
+        self.auto_answer_eliza_share_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        eliza_slider_row.addWidget(self.auto_answer_eliza_share_value)
+        limits_layout.addLayout(eliza_slider_row)
+
+        def _refresh_eliza_share_label(value: int) -> None:
+            self.auto_answer_eliza_share_value.setText(f"ELIZA {int(value)}% / {100 - int(value)}% Pool")
+
+        _refresh_eliza_share_label(self.auto_answer_eliza_share.value())
+        self.auto_answer_eliza_share.valueChanged.connect(_refresh_eliza_share_label)
+
+        phrase_repeat_row = QHBoxLayout()
+        phrase_repeat_row.addWidget(QLabel(self.t("auto_answer_phrase_repeat_lookback_label", "Wie viele letzte Auto-Answer-Benutzertexte nicht wiederholt werden dürfen")), 1)
+        self.auto_answer_phrase_repeat_lookback = QSpinBox()
+        self.auto_answer_phrase_repeat_lookback.setRange(0, 50)
+        self.auto_answer_phrase_repeat_lookback.setValue(int(self.config.get("auto_answer_phrase_repeat_lookback", 3) or 3))
+        self.auto_answer_phrase_repeat_lookback.setToolTip(self.t("auto_answer_phrase_repeat_lookback_tooltip", "Bei Standardsätzen werden die letzten automatisch erzeugten Benutzertexte berücksichtigt. Wenn nicht genug verschiedene Standardsätze übrig bleiben, wird automatisch ELIZA verwendet."))
+        phrase_repeat_row.addWidget(self.auto_answer_phrase_repeat_lookback)
+        limits_layout.addLayout(phrase_repeat_row)
 
         context_row = QHBoxLayout()
         context_row.addWidget(QLabel(self.t("context_limit_label", "Kontextfenster für Antworten (Nachrichten)")), 1)
@@ -1389,7 +1649,14 @@ class SettingsDialog(QDialog):
         dialog.exec()
 
     def edit_auto_answer_phrases(self) -> None:
-        dialog = AutoAnswerPhrasesDialog(self.config.get("interface_language", "de"), self)
+        dialog = AutoAnswerPhrasesDialog(self.current_settings_language_code(), self)
+        dialog.exec()
+
+    def current_settings_language_code(self) -> str:
+        return (self.interface_language.currentData() or self.config.get("interface_language", "de") or "de").strip() or "de"
+
+    def edit_auto_answer_short_prompt(self) -> None:
+        dialog = AutoAnswerShortPromptDialog(self.config, self.current_settings_language_code(), self)
         dialog.exec()
 
     def _refresh_name_placeholders(self) -> None:
@@ -1417,14 +1684,18 @@ class SettingsDialog(QDialog):
         data["tts_model"] = self.tts_model.currentText().strip() or "tts-1-hd"
         data["autoplay_tts"] = self.autoplay.isChecked()
         data["auto_read_assistant_responses"] = self.auto_read_responses.isChecked()
+        data["auto_read_user_inputs"] = self.auto_read_user_inputs.isChecked()
         data["read_all_include_names"] = self.read_all_include_names.isChecked()
         data["user_display_name"] = self.user_display_name.text().strip()
         data["assistant_display_name"] = self.assistant_display_name.text().strip()
         data["tts_lexicon_enabled"] = self.tts_lexicon.isChecked()
         data["windows_sapi_lexicon_enabled"] = data["tts_lexicon_enabled"]
         data["strip_emojis_for_tts"] = self.strip_emojis.isChecked()
+        data["auto_answer_short_answers"] = self.auto_answer_short_answers.isChecked()
         data["chat_max_tokens"] = int(self.chat_max_tokens.value())
         data["auto_answer_max_rounds"] = int(self.auto_answer_rounds.value())
+        data["auto_answer_eliza_share"] = int(self.auto_answer_eliza_share.value())
+        data["auto_answer_phrase_repeat_lookback"] = int(self.auto_answer_phrase_repeat_lookback.value())
         data["context_message_limit"] = int(self.context_limit.value())
         data["windows_sapi_rate"] = int(self.sapi_rate_slider.value())
         data["windows_sapi_pitch"] = int(self.sapi_pitch_slider.value())
@@ -1742,6 +2013,7 @@ class MainWindow(QMainWindow):
         self.pending_auto_submit_message: Optional[ChatMessage] = None
         self.auto_answer_waiting_for_user_audio = False
         self.auto_answer_rounds_current = 0
+        self.current_request_consumes_rollover_short_instruction = False
 
         self.setWindowTitle(self.t("app_title", "OllamaVibeDesk"))
         self.audio_error_signal.connect(self._on_audio_error)
@@ -2245,18 +2517,116 @@ class MainWindow(QMainWindow):
                 4500,
             )
 
+    def _auto_answer_recent_generated_user_messages(self) -> list[str]:
+        if not self.current_session:
+            return []
+        lookback = max(0, int(self.config.get("auto_answer_phrase_repeat_lookback", 3) or 0))
+        if lookback <= 0:
+            return []
+        items = [
+            message_visible_content(message)
+            for message in self.current_session.messages
+            if message.role == "user" and bool(getattr(message, "generated", False)) and (message_visible_content(message) or "").strip()
+        ]
+        return items[-lookback:]
+
+    def _session_rollover_threshold(self) -> int:
+        limit = int(self.config.get("context_message_limit", AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT) or AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT)
+        return max(6, limit)
+
+    def _ensure_safe_session_capacity(self, additional_messages: int = 0, auto_answer_only: bool = False) -> bool:
+        if not self.current_session:
+            return False
+        if auto_answer_only and not self.auto_answer_checkbox.isChecked():
+            return False
+        threshold = self._session_rollover_threshold()
+        current_count = len(self.current_session.messages)
+        if current_count + max(0, int(additional_messages or 0)) <= threshold:
+            return False
+        carry_count = min(AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES, max(4, threshold // 4), current_count)
+        if carry_count <= 0:
+            return False
+        carry_messages = [
+            ChatMessage(
+                role=msg.role,
+                content=msg.content,
+                created_at=msg.created_at,
+                generated=bool(getattr(msg, "generated", False)),
+                audio_path=msg.audio_path,
+                display_content=getattr(msg, "display_content", None),
+            )
+            for msg in self.current_session.messages[-carry_count:]
+            if msg.role in {"user", "assistant"}
+        ]
+        if not carry_messages:
+            return False
+        old_title = self.current_session.title
+        now = datetime.now().isoformat(timespec="seconds")
+        continuation_suffix = self.t("continuation_suffix", " (Fortsetzung)")
+        new_title = old_title if old_title.endswith(continuation_suffix) else f"{old_title}{continuation_suffix}"
+        session = ChatSession(
+            session_id=uuid.uuid4().hex,
+            title=new_title,
+            created_at=now,
+            updated_at=now,
+            model_name=self.model_combo.currentText().strip(),
+            messages=carry_messages,
+            reapply_short_instruction_after_rollover=True,
+        )
+        self.store.save(session)
+        self.refresh_sessions_ui()
+        self.open_session(session.session_id)
+        self.statusBar().showMessage(
+            self.t("chat_rollover_message", "Ein neuer Folge-Chat wurde mit den letzten Nachrichten geöffnet, damit das Gespräch stabil weiterlaufen kann."),
+            4500,
+        )
+        return True
+
+    def _current_auto_answer_short_instruction(self) -> str:
+        return auto_answer_short_instruction(self.config, self.config.get("interface_language", "de"))
+
+    def _should_apply_auto_answer_short_instruction(self) -> bool:
+        return self.auto_answer_checkbox.isChecked() and bool(self.config.get("auto_answer_short_answers", True))
+
+    def _request_message_items(self) -> list[ChatMessage]:
+        if not self.current_session:
+            return []
+        items = [item for item in self.current_session.messages if item.role in {"user", "assistant"}]
+        if items and items[-1].role == "assistant" and not (items[-1].content or "").strip():
+            items = items[:-1]
+        return items
+
+    def _session_requires_rollover_short_instruction_reapply(self) -> bool:
+        return bool(self.current_session and getattr(self.current_session, "reapply_short_instruction_after_rollover", False))
+
+    def _should_embed_short_instruction_in_next_user_message(self) -> bool:
+        if not self._should_apply_auto_answer_short_instruction():
+            return False
+        if self._session_requires_rollover_short_instruction_reapply():
+            return True
+        items = self._request_message_items()
+        return not any(item.role == "assistant" for item in items)
+
+    def _build_user_message_content(self, text: str) -> tuple[str, str, bool]:
+        visible_text = str(text or "").strip()
+        short_instruction = self._current_auto_answer_short_instruction().strip()
+        should_embed = bool(visible_text) and self._should_embed_short_instruction_in_next_user_message() and bool(short_instruction)
+        stored_content = append_hidden_instruction_to_user_text(visible_text, short_instruction) if should_embed else visible_text
+        return stored_content, visible_text, should_embed
+
+    def request_system_prompt(self) -> str:
+        return str(self.config.get("system_prompt", "") or "").strip()
+
     def session_messages_for_api(self) -> List[dict]:
         if not self.current_session:
             return []
-        messages = [
-            {"role": item.role, "content": item.content}
-            for item in self.current_session.messages
-            if item.role in {"user", "assistant"}
-        ]
+        raw_items = self._request_message_items()
+        messages = [{"role": item.role, "content": item.content} for item in raw_items]
         limit = int(self.config.get("context_message_limit", 40) or 40)
         if limit > 0 and len(messages) > limit:
             messages = messages[-limit:]
         return messages
+
 
     def _on_input_text_changed(self) -> None:
         if self.input_box.toPlainText().strip() and self.auto_answer_timer.isActive():
@@ -2279,14 +2649,18 @@ class MainWindow(QMainWindow):
     def _append_user_message(self, text: str, generated: bool = False) -> ChatMessage:
         if not self.current_session:
             self.create_new_session()
-        user_message = ChatMessage.now("user", text)
+        self._ensure_safe_session_capacity(additional_messages=2, auto_answer_only=True)
+        stored_content, visible_text, embedded_short_instruction = self._build_user_message_content(text)
+        user_message = ChatMessage.now("user", stored_content, generated=generated, display_content=visible_text)
         if generated:
             self.auto_answer_rounds_current += 1
         else:
             self.auto_answer_rounds_current = 0
+        if embedded_short_instruction and self.current_session is not None and self.current_session.reapply_short_instruction_after_rollover:
+            self.current_session.reapply_short_instruction_after_rollover = False
         self.current_session.messages.append(user_message)
         if self.current_session.title == self.t("new_conversation", "Neue Unterhaltung"):
-            self.current_session.title = text[:48] + ("…" if len(text) > 48 else "")
+            self.current_session.title = visible_text[:48] + ("…" if len(visible_text) > 48 else "")
         self.current_session.model_name = self.model_combo.currentText().strip()
         self.store.save(self.current_session)
         self.refresh_sessions_ui()
@@ -2299,6 +2673,7 @@ class MainWindow(QMainWindow):
         return user_message
 
     def _begin_assistant_request(self) -> None:
+        self._ensure_safe_session_capacity(additional_messages=1, auto_answer_only=True)
         selected_model = self.model_combo.currentText().strip()
         previous_model = (self.last_requested_model or "").strip()
         assistant_message = ChatMessage.now("assistant", "")
@@ -2313,10 +2688,11 @@ class MainWindow(QMainWindow):
         self.current_assistant_text = ""
         self.last_requested_model = selected_model
 
-        messages = self.session_messages_for_api()[:-1]
+        messages = self.session_messages_for_api()
+        self.current_request_consumes_rollover_short_instruction = False
         self._set_request_feedback("sent")
         self._flush_chat_ui()
-        self.start_worker(messages)
+        self.start_worker(messages, self.request_system_prompt())
         self.stop_btn.setEnabled(True)
         self._set_request_feedback("waiting")
 
@@ -2345,7 +2721,13 @@ class MainWindow(QMainWindow):
         phrase_data = load_auto_answer_data()
         if isinstance(phrase_data, dict) and phrase_data.get("enabled", True) is False:
             return
-        auto_text = generate_auto_answer(self.pending_auto_answer_source, self.config.get("interface_language", "de"), phrase_data)
+        auto_text = generate_auto_answer(
+            self.pending_auto_answer_source,
+            self.config.get("interface_language", "de"),
+            phrase_data,
+            recent_generated_user_messages=self._auto_answer_recent_generated_user_messages(),
+            eliza_share_percent=int(self.config.get("auto_answer_eliza_share", 60) or 60),
+        )
         if not auto_text:
             return
         self.pending_auto_answer_source = ""
@@ -2371,16 +2753,18 @@ class MainWindow(QMainWindow):
         self.pending_auto_submit_message = None
         self.auto_answer_waiting_for_user_audio = False
         self.input_box.clear()
-        self._append_user_message(text)
+        user_message = self._append_user_message(text)
         self._begin_assistant_request()
+        if self.config.get("auto_read_user_inputs", False) and self.config.get("tts_backend", "disabled") != "disabled":
+            self.read_aloud_message(user_message, show_disabled_message=False, allow_autoplay=True)
 
-    def start_worker(self, messages: List[dict]) -> None:
+    def start_worker(self, messages: List[dict], system_prompt: str) -> None:
         self.worker_thread = QThread(self)
         self.worker = ChatWorker(
             base_url=self.config.get("ollama_base_url", "http://127.0.0.1:11434").strip(),
             model_name=self.model_combo.currentText().strip(),
             messages=messages,
-            system_prompt=self.config.get("system_prompt", ""),
+            system_prompt=system_prompt,
             max_tokens=int(self.config.get("chat_max_tokens", 512) or 512),
         )
         self.worker.moveToThread(self.worker_thread)
@@ -2423,6 +2807,7 @@ class MainWindow(QMainWindow):
                 self.pending_auto_answer_source = final_text
             else:
                 self._schedule_auto_answer(final_text)
+        self.current_request_consumes_rollover_short_instruction = False
         self._set_request_feedback("finished")
         self._flush_chat_ui()
         self.statusBar().showMessage(self.t("answer_finished", "Antwort abgeschlossen."), 2500)
@@ -2440,6 +2825,7 @@ class MainWindow(QMainWindow):
         if self.current_session and self.current_session.messages:
             self.current_session.messages[-1].content = f"Fehler bei der Ollama-Anfrage:\n\n{message}"
             self.store.save(self.current_session)
+        self.current_request_consumes_rollover_short_instruction = False
         self._set_request_feedback("failed")
         self._flush_chat_ui()
         self.statusBar().showMessage(self.t("ollama_failed", "Ollama-Anfrage fehlgeschlagen."), 4000)
@@ -2464,7 +2850,7 @@ class MainWindow(QMainWindow):
         bar.setValue(bar.maximum())
 
     def _prepare_tts_text(self, message: ChatMessage) -> str:
-        original_text = message.content.strip()
+        original_text = message_visible_content(message).strip()
         text = markdown_to_tts_text(original_text)
         if self.config.get("tts_lexicon_enabled", self.config.get("windows_sapi_lexicon_enabled", True)):
             text = apply_sapi_lexicon(text, load_sapi_lexicon())
@@ -2782,7 +3168,7 @@ class MainWindow(QMainWindow):
         for message in self.current_session.messages:
             role_label = resolve_display_name(self.config, message.role)
             msg_class = 'assistant' if message.role == 'assistant' else 'user'
-            rendered = markdown.markdown(message.content if message.role == 'assistant' else html.escape(message.content), extensions=['fenced_code', 'tables'])
+            rendered = markdown.markdown(message.content if message.role == 'assistant' else html.escape(message_visible_content(message)), extensions=['fenced_code', 'tables'])
             body_parts.append(f"<div class='msg {msg_class}'><div class='msgmeta'>{html.escape(role_label)} · {html.escape(pretty_timestamp(message.created_at))}</div>{rendered}</div>")
         body_parts.append('</body></html>')
         html_doc = ''.join(body_parts)
@@ -2981,11 +3367,13 @@ class MainWindow(QMainWindow):
             theme_changed = old_theme != self.config.get("theme", "Midnight")
             tts_keys = {
                 "tts_backend", "tts_base_url", "tts_voice", "tts_model", "tts_format",
-                "autoplay_tts", "auto_read_assistant_responses",
+                "autoplay_tts", "auto_read_assistant_responses", "auto_read_user_inputs",
                 "tts_user_voice", "tts_lexicon_enabled", "windows_sapi_lexicon_enabled", "windows_sapi_rate",
                 "windows_sapi_pitch", "windows_sapi_volume", "read_all_include_names",
                 "user_display_name", "assistant_display_name", "strip_emojis_for_tts",
-                "chat_max_tokens", "auto_answer_max_rounds", "context_message_limit"
+                "chat_max_tokens", "auto_answer_max_rounds", "auto_answer_short_answers",
+                "auto_answer_eliza_share", "auto_answer_phrase_repeat_lookback",
+                "context_message_limit", "tts_voice_defaults_initialized"
             }
             tts_changed = any(old_config.get(k) != self.config.get(k) for k in tts_keys)
             restarted_tts = False

@@ -33,6 +33,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "tts_format": "wav",
     "autoplay_tts": True,
     "auto_read_assistant_responses": True,
+    "auto_read_user_inputs": False,
     "tts_lexicon_enabled": True,
     "windows_sapi_lexicon_enabled": True,
     "tts_user_voice": "",
@@ -51,6 +52,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "chat_max_tokens": 512,
     "auto_answer_max_rounds": 0,
     "context_message_limit": 40,
+    "auto_answer_short_answers": True,
+    "auto_answer_eliza_share": 60,
+    "auto_answer_phrase_repeat_lookback": 3,
+    "auto_answer_short_instruction_overrides": {},
     "tts_voice_defaults_initialized": False,
 }
 
