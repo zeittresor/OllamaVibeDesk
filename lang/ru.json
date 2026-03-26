@@ -230,5 +230,15 @@
   "composer_state_waiting": "LLM is responding … waiting for first tokens.",
   "composer_state_streaming": "LLM is responding right now …",
   "composer_state_finished": "Answer completed.",
-  "composer_state_failed": "Answer failed."
+  "composer_state_failed": "Answer failed.",
+  "tts_feedback_idle": "Ready for speech output.",
+  "tts_feedback_elapsed": "TTS: {seconds} s",
+  "tts_feedback_checking": "Checking local VibeVoice server …",
+  "tts_feedback_generating": "Generating speech audio …",
+  "tts_feedback_playing": "Playing speech audio …",
+  "tts_feedback_generating_segment": "Generating speech audio … Segment {current}/{total}",
+  "tts_feedback_playing_segment": "Playing speech audio … Segment {current}/{total}",
+  "tts_feedback_generating_sentence": "Generating speech audio … Sentence {current}/{total}",
+  "tts_feedback_playing_sentence": "Playing speech audio … Sentence {current}/{total}",
+  "tts_setup_start_failed": "VibeVoice server did not become ready in time."
 }
