@@ -250,5 +250,8 @@
   "auto_answer_rounds_tooltip": "Begrenzt, wie oft Auto Answer hintereinander antworten darf. 0 bedeutet unbegrenzt.",
   "context_limit_label": "Kontextfenster für Antworten (Nachrichten)",
   "context_limit_tooltip": "Nur die letzten N Nachrichten werden an das Modell gesendet. Das kann längere Auto-Answer-Gespräche stabiler machen.",
-  "auto_answer_limit_reached": "Auto-Answer-Limit erreicht. Schreibe selbst weiter oder erhöhe das Limit in den Einstellungen."
+  "auto_answer_limit_reached": "Auto-Answer-Limit erreicht. Schreibe selbst weiter oder erhöhe das Limit in den Einstellungen.",
+  "edit_auto_answer_short_prompt": "Zusatzprompt bearbeiten …",
+  "auto_answer_short_prompt_dialog_title": "Zusatzprompt für kurze Auto-Answer-Antworten",
+  "auto_answer_short_prompt_dialog_info": "Dieser Zusatzprompt wird unsichtbar an das LLM angehängt: beim ersten Nutzerbeitrag eines Chats und nach einem automatischen Folge-Chat noch einmal beim nächsten Nutzerbeitrag. Er gilt für die aktuell gewählte Oberflächensprache: {language}."
 }

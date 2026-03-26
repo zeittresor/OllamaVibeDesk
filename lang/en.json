@@ -250,5 +250,8 @@
   "auto_answer_rounds_tooltip": "Limits how many times auto answer may reply in a row. 0 means unlimited.",
   "context_limit_label": "Context window for replies (messages)",
   "context_limit_tooltip": "Only the last N messages are sent to the model. This can make longer auto-answer conversations more stable.",
-  "auto_answer_limit_reached": "Auto-answer limit reached. Continue manually or increase the limit in settings."
+  "auto_answer_limit_reached": "Auto-answer limit reached. Continue manually or increase the limit in settings.",
+  "edit_auto_answer_short_prompt": "Edit additional prompt …",
+  "auto_answer_short_prompt_dialog_title": "Additional prompt for short auto-answer replies",
+  "auto_answer_short_prompt_dialog_info": "This additional prompt is appended invisibly to the LLM input: for the first user message of a chat and once again for the next user message after an automatic continuation chat. It applies to the currently selected interface language: {language}."
 }
