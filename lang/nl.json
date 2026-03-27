@@ -240,5 +240,18 @@
   "tts_feedback_playing_segment": "Playing speech audio … Segment {current}/{total}",
   "tts_feedback_generating_sentence": "Generating speech audio … Sentence {current}/{total}",
   "tts_feedback_playing_sentence": "Playing speech audio … Sentence {current}/{total}",
-  "tts_setup_start_failed": "VibeVoice server did not become ready in time."
+  "tts_setup_start_failed": "VibeVoice server did not become ready in time.",
+  "auto_answer_limit_reached": "De auto-antwoordlimiet is bereikt. Ga handmatig verder of verhoog de limiet in de instellingen.",
+  "auto_answer_rounds_label": "Maximaal aantal auto-antwoorden op rij (0 = onbeperkt)",
+  "auto_answer_rounds_tooltip": "Beperkt hoe vaak auto-antwoord achter elkaar mag reageren. 0 betekent onbeperkt.",
+  "auto_answer_short_prompt_dialog_info": "Deze extra prompt wordt onzichtbaar aan de LLM-invoer toegevoegd: voor het eerste gebruikersbericht van een chat en nog één keer voor het volgende gebruikersbericht na een automatische vervolgchat. Dit geldt voor de momenteel geselecteerde interfacetaal: {language}.",
+  "auto_answer_short_prompt_dialog_title": "Extra prompt voor korte auto-antwoorden",
+  "chat_max_tokens_label": "Maximale antwoordlengte (tokens)",
+  "chat_max_tokens_tooltip": "Beperkt de lengte van het LLM-antwoord. Kleinere waarden kunnen lange auto-antwoordlussen stabieler maken.",
+  "context_limit_label": "Contextvenster voor antwoorden (berichten)",
+  "context_limit_tooltip": "Alleen de laatste N berichten worden naar het model gestuurd. Dit kan langere auto-antwoordgesprekken stabieler maken.",
+  "edit_auto_answer_short_prompt": "Extra prompt bewerken …",
+  "limits_group_title": "Limieten voor antwoorden en auto-antwoorden",
+  "strip_emojis_label": "Emoji’s niet uitspreken",
+  "strip_emojis_tooltip": "Verwijdert emoji’s en eenvoudige emoticons uit de gesproken tekst voordat TTS wordt gegenereerd."
 }

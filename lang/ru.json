@@ -240,5 +240,18 @@
   "tts_feedback_playing_segment": "Playing speech audio … Segment {current}/{total}",
   "tts_feedback_generating_sentence": "Generating speech audio … Sentence {current}/{total}",
   "tts_feedback_playing_sentence": "Playing speech audio … Sentence {current}/{total}",
-  "tts_setup_start_failed": "VibeVoice server did not become ready in time."
+  "tts_setup_start_failed": "VibeVoice server did not become ready in time.",
+  "auto_answer_limit_reached": "Достигнут предел автоответа. Продолжите вручную или увеличьте лимит в настройках.",
+  "auto_answer_rounds_label": "Максимум циклов автоответа (0 = без ограничений)",
+  "auto_answer_rounds_tooltip": "Ограничивает, сколько раз автоответ может отвечать подряд. 0 означает без ограничений.",
+  "auto_answer_short_prompt_dialog_info": "Этот дополнительный промпт незаметно добавляется к вводу LLM: для первого сообщения пользователя в чате и ещё один раз для следующего сообщения пользователя после автоматического чата-продолжения. Он применяется к текущему выбранному языку интерфейса: {language}.",
+  "auto_answer_short_prompt_dialog_title": "Дополнительный промпт для коротких автоответов",
+  "chat_max_tokens_label": "Максимальная длина ответа (токены)",
+  "chat_max_tokens_tooltip": "Ограничивает длину ответа LLM. Меньшие значения могут сделать длинные циклы автоответа более стабильными.",
+  "context_limit_label": "Окно контекста для ответов (сообщения)",
+  "context_limit_tooltip": "Модели отправляются только последние N сообщений. Это может сделать длинные автоответные диалоги более стабильными.",
+  "edit_auto_answer_short_prompt": "Редактировать дополнительный промпт …",
+  "limits_group_title": "Лимиты ответов и автоответа",
+  "strip_emojis_label": "Не озвучивать эмодзи",
+  "strip_emojis_tooltip": "Удаляет эмодзи и простые смайлики из озвучиваемого текста перед созданием TTS."
 }

@@ -240,5 +240,18 @@
   "tts_feedback_playing_segment": "Playing speech audio … Segment {current}/{total}",
   "tts_feedback_generating_sentence": "Generating speech audio … Sentence {current}/{total}",
   "tts_feedback_playing_sentence": "Playing speech audio … Sentence {current}/{total}",
-  "tts_setup_start_failed": "VibeVoice server did not become ready in time."
+  "tts_setup_start_failed": "VibeVoice server did not become ready in time.",
+  "auto_answer_limit_reached": "O limite de resposta automática foi atingido. Continue manualmente ou aumente o limite nas definições.",
+  "auto_answer_rounds_label": "Máximo de rodadas de resposta automática (0 = ilimitado)",
+  "auto_answer_rounds_tooltip": "Limita quantas vezes a resposta automática pode responder em sequência. 0 significa ilimitado.",
+  "auto_answer_short_prompt_dialog_info": "Este prompt adicional é anexado de forma invisível à entrada do LLM: para a primeira mensagem do utilizador de um chat e mais uma vez para a mensagem seguinte do utilizador após um chat de continuação automática. Aplica-se ao idioma de interface atualmente selecionado: {language}.",
+  "auto_answer_short_prompt_dialog_title": "Prompt adicional para respostas automáticas curtas",
+  "chat_max_tokens_label": "Comprimento máximo da resposta (tokens)",
+  "chat_max_tokens_tooltip": "Limita o comprimento da resposta do LLM. Valores menores podem tornar mais estáveis os ciclos longos de resposta automática.",
+  "context_limit_label": "Janela de contexto para respostas (mensagens)",
+  "context_limit_tooltip": "Apenas as últimas N mensagens são enviadas ao modelo. Isto pode tornar conversas longas de resposta automática mais estáveis.",
+  "edit_auto_answer_short_prompt": "Editar prompt adicional …",
+  "limits_group_title": "Limites de resposta e resposta automática",
+  "strip_emojis_label": "Não ler emojis",
+  "strip_emojis_tooltip": "Remove emojis e emoticons simples do texto falado antes da geração do TTS."
 }

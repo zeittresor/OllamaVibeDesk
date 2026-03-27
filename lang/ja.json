@@ -240,5 +240,18 @@
   "tts_feedback_playing_segment": "Playing speech audio … Segment {current}/{total}",
   "tts_feedback_generating_sentence": "Generating speech audio … Sentence {current}/{total}",
   "tts_feedback_playing_sentence": "Playing speech audio … Sentence {current}/{total}",
-  "tts_setup_start_failed": "VibeVoice server did not become ready in time."
+  "tts_setup_start_failed": "VibeVoice server did not become ready in time.",
+  "auto_answer_limit_reached": "自動応答の上限に達しました。手動で続けるか、設定で上限を増やしてください。",
+  "auto_answer_rounds_label": "自動応答の最大ラウンド数 (0 = 無制限)",
+  "auto_answer_rounds_tooltip": "自動応答が連続して何回返信できるかを制限します。0 は無制限です。",
+  "auto_answer_short_prompt_dialog_info": "この追加プロンプトは LLM 入力に見えない形で追加されます。対象はチャット内の最初のユーザーメッセージと、自動継続チャット後の次のユーザーメッセージ1回です。現在選択されているインターフェース言語に適用されます: {language}。",
+  "auto_answer_short_prompt_dialog_title": "短い自動応答用の追加プロンプト",
+  "chat_max_tokens_label": "最大応答長 (トークン)",
+  "chat_max_tokens_tooltip": "LLM の応答長を制限します。小さい値にすると、長い自動応答ループがより安定する場合があります。",
+  "context_limit_label": "返信用コンテキストウィンドウ (メッセージ)",
+  "context_limit_tooltip": "モデルには最後の N 件のメッセージのみが送信されます。これにより、長い自動応答会話がより安定する場合があります。",
+  "edit_auto_answer_short_prompt": "追加プロンプトを編集 …",
+  "limits_group_title": "応答と自動応答の制限",
+  "strip_emojis_label": "絵文字を読み上げない",
+  "strip_emojis_tooltip": "TTS 生成前に、読み上げテキストから絵文字と簡単な顔文字を削除します。"
 }

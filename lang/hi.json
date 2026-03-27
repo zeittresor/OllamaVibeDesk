@@ -240,5 +240,18 @@
   "tts_feedback_playing_segment": "Playing speech audio … Segment {current}/{total}",
   "tts_feedback_generating_sentence": "Generating speech audio … Sentence {current}/{total}",
   "tts_feedback_playing_sentence": "Playing speech audio … Sentence {current}/{total}",
-  "tts_setup_start_failed": "VibeVoice server did not become ready in time."
+  "tts_setup_start_failed": "VibeVoice server did not become ready in time.",
+  "auto_answer_limit_reached": "ऑटो-आंसर की सीमा पहुँच गई है। मैन्युअल रूप से जारी रखें या सेटिंग्स में सीमा बढ़ाएँ।",
+  "auto_answer_rounds_label": "अधिकतम ऑटो-आंसर राउंड (0 = असीमित)",
+  "auto_answer_rounds_tooltip": "यह सीमित करता है कि ऑटो-आंसर लगातार कितनी बार जवाब दे सकता है। 0 का मतलब असीमित है।",
+  "auto_answer_short_prompt_dialog_info": "यह अतिरिक्त प्रॉम्प्ट LLM इनपुट में अदृश्य रूप से जोड़ा जाता है: किसी चैट के पहले उपयोगकर्ता संदेश के लिए, और एक स्वचालित कंटिन्यूएशन चैट के बाद अगले उपयोगकर्ता संदेश के लिए एक बार फिर। यह वर्तमान में चुनी गई इंटरफ़ेस भाषा पर लागू होता है: {language}.",
+  "auto_answer_short_prompt_dialog_title": "संक्षिप्त ऑटो-आंसर उत्तरों के लिए अतिरिक्त प्रॉम्प्ट",
+  "chat_max_tokens_label": "अधिकतम उत्तर लंबाई (टोकन)",
+  "chat_max_tokens_tooltip": "यह LLM उत्तर की लंबाई सीमित करता है। छोटे मान लंबे ऑटो-आंसर लूप को अधिक स्थिर बना सकते हैं।",
+  "context_limit_label": "उत्तर के लिए संदर्भ विंडो (संदेश)",
+  "context_limit_tooltip": "मॉडल को केवल अंतिम N संदेश भेजे जाते हैं। इससे लंबे ऑटो-आंसर संवाद अधिक स्थिर हो सकते हैं।",
+  "edit_auto_answer_short_prompt": "अतिरिक्त प्रॉम्प्ट संपादित करें …",
+  "limits_group_title": "उत्तर और ऑटो-आंसर सीमाएँ",
+  "strip_emojis_label": "इमोजी न बोलें",
+  "strip_emojis_tooltip": "TTS बनने से पहले बोले जाने वाले पाठ से इमोजी और सरल इमोटिकॉन हटा देता है।"
 }

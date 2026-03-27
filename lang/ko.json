@@ -240,5 +240,18 @@
   "tts_feedback_playing_segment": "Playing speech audio … Segment {current}/{total}",
   "tts_feedback_generating_sentence": "Generating speech audio … Sentence {current}/{total}",
   "tts_feedback_playing_sentence": "Playing speech audio … Sentence {current}/{total}",
-  "tts_setup_start_failed": "VibeVoice server did not become ready in time."
+  "tts_setup_start_failed": "VibeVoice server did not become ready in time.",
+  "auto_answer_limit_reached": "자동 응답 한도에 도달했습니다. 수동으로 계속하거나 설정에서 한도를 늘리세요.",
+  "auto_answer_rounds_label": "최대 자동 응답 횟수 (0 = 무제한)",
+  "auto_answer_rounds_tooltip": "자동 응답이 연속으로 몇 번 답할 수 있는지 제한합니다. 0은 무제한입니다.",
+  "auto_answer_short_prompt_dialog_info": "이 추가 프롬프트는 LLM 입력에 보이지 않게 추가됩니다. 채팅의 첫 사용자 메시지와 자동 이어가기 채팅 이후 다음 사용자 메시지 1회에 적용됩니다. 현재 선택된 인터페이스 언어에 적용됩니다: {language}.",
+  "auto_answer_short_prompt_dialog_title": "짧은 자동 응답을 위한 추가 프롬프트",
+  "chat_max_tokens_label": "최대 답변 길이 (토큰)",
+  "chat_max_tokens_tooltip": "LLM 답변 길이를 제한합니다. 더 작은 값은 긴 자동 응답 루프를 더 안정적으로 만들 수 있습니다.",
+  "context_limit_label": "답변용 컨텍스트 창 (메시지)",
+  "context_limit_tooltip": "모델에는 마지막 N개의 메시지만 전송됩니다. 이렇게 하면 긴 자동 응답 대화가 더 안정적일 수 있습니다.",
+  "edit_auto_answer_short_prompt": "추가 프롬프트 편집 …",
+  "limits_group_title": "답변 및 자동 응답 제한",
+  "strip_emojis_label": "이모지를 읽지 않기",
+  "strip_emojis_tooltip": "TTS 생성 전에 말해질 텍스트에서 이모지와 간단한 이모티콘을 제거합니다."
 }

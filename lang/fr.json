@@ -240,5 +240,18 @@
   "tts_feedback_playing_segment": "Playing speech audio … Segment {current}/{total}",
   "tts_feedback_generating_sentence": "Generating speech audio … Sentence {current}/{total}",
   "tts_feedback_playing_sentence": "Playing speech audio … Sentence {current}/{total}",
-  "tts_setup_start_failed": "VibeVoice server did not become ready in time."
+  "tts_setup_start_failed": "VibeVoice server did not become ready in time.",
+  "auto_answer_limit_reached": "La limite d’auto-réponse a été atteinte. Continuez manuellement ou augmentez la limite dans les paramètres.",
+  "auto_answer_rounds_label": "Nombre maximal de tours d’auto-réponse (0 = illimité)",
+  "auto_answer_rounds_tooltip": "Limite le nombre de réponses automatiques consécutives. 0 signifie illimité.",
+  "auto_answer_short_prompt_dialog_info": "Cette invite supplémentaire est ajoutée de manière invisible à l’entrée du LLM : pour le premier message utilisateur d’un chat et encore une fois pour le message utilisateur suivant après un chat de continuation automatique. Elle s’applique à la langue d’interface actuellement sélectionnée : {language}.",
+  "auto_answer_short_prompt_dialog_title": "Invite supplémentaire pour des réponses auto courtes",
+  "chat_max_tokens_label": "Longueur maximale de réponse (tokens)",
+  "chat_max_tokens_tooltip": "Limite la longueur de la réponse du LLM. Des valeurs plus petites peuvent rendre les longues boucles d’auto-réponse plus stables.",
+  "context_limit_label": "Fenêtre de contexte pour les réponses (messages)",
+  "context_limit_tooltip": "Seuls les N derniers messages sont envoyés au modèle. Cela peut rendre les longues conversations d’auto-réponse plus stables.",
+  "edit_auto_answer_short_prompt": "Modifier l’invite supplémentaire …",
+  "limits_group_title": "Limites de réponse et d’auto-réponse",
+  "strip_emojis_label": "Ne pas lire les emojis",
+  "strip_emojis_tooltip": "Supprime les emojis et émoticônes simples du texte parlé avant la génération TTS."
 }
