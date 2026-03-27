@@ -163,5 +163,5 @@ https://github.com/zeittresor/OllamaVibeDesk/
 
 ## Cheats
 
-ex. you give to a LLM something to talk about (make sure you have selected your nativ language and set ELIZA to ~80%), in the main chat page select the checkbox at "Auto Answer (ELIZA), and click send. Now you unplug your internet connection, mute your speaker, go to bed. If everything is working correctly you might find some crazy new programs you could test in the output after your breakfast - just copy the selected code and rename it to [what ever name].py and start it). I got ~20 new programs in ~8 hours. Most is crap but it works mostly. :-)
+ex. you give to a LLM something to talk about (make sure you have selected your nativ language and set ELIZA to a relation of ~ 20% / 80%), in the main chat page select the checkbox at "Auto Answer (ELIZA), and click send. Now you unplug your internet connection, mute your speaker, go to bed. If everything is working correctly you might find some crazy new programs you could test in the output after your breakfast - just copy the selected code and rename it to [what ever name].py and start it). I got ~20 new programs in ~8 hours. Most is crap but it works mostly. :-)
 
