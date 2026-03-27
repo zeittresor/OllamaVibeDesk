@@ -19,7 +19,7 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - different voice output speakers for human and AI (as Sapi or VibeVoice Speakers)
 - automatic VibeVoice server setup included
 - auto answer function to act like the human based of the ELIZA algorythm to automaticly continue a chat dialog
-- Automatic Python code GUI program generation based on the current content of the conversation (sometimes - using "auto-answer" mode) :-)
+- Automatic Python code GUI program generation based on the current content of the conversation (using "auto-answer" mode) :-)
 
 ## Example with voice output (german language)
 
