@@ -164,53 +164,111 @@ def ensure_default_auto_answer_phrases() -> None:
                 "und bezogen auf die aktuellen krisen auf der welt wie beurteilst du das",
                 "unglaublich, das ist ja heftig",
                 "kannst du das noch etwas weiter ausführen",
-                "welche folgen könnte das langfristig haben"
+                "welche folgen könnte das langfristig haben",
+                "und wenn du das in die richtung @@@ weiter denkst ?",
+                "und im bezug auf @@@ ?",
+                "und was würde das bei @@@ verändern ?"
             ],
             "en": [
                 "and would you have concrete suggestions for improvement",
                 "and in light of the current crises in the world, how do you see that",
                 "wow, that is intense",
                 "could you expand on that a bit more",
-                "what long-term consequences could that have"
+                "what long-term consequences could that have",
+                "and what if you think that further in the direction of @@@?",
+                "and in relation to @@@?",
+                "and what would that change about @@@?"
             ],
             "fr": [
                 "et aurais-tu des propositions d'amélioration concrètes",
                 "et par rapport aux crises actuelles dans le monde, comment vois-tu cela",
                 "incroyable, c'est intense",
                 "peux-tu développer un peu plus",
-                "quelles conséquences cela pourrait-il avoir à long terme"
+                "quelles conséquences cela pourrait-il avoir à long terme",
+                "et si tu poussais cela davantage dans la direction de @@@ ?",
+                "et par rapport à @@@ ?",
+                "et qu'est-ce que cela changerait concernant @@@ ?"
             ],
             "es": [
                 "y tendrías propuestas concretas de mejora",
                 "y respecto a las crisis actuales del mundo, cómo lo valoras",
                 "increíble, eso es fuerte",
                 "podrías profundizar un poco más",
-                "qué consecuencias podría tener a largo plazo"
+                "qué consecuencias podría tener a largo plazo",
+                "y si lo pensaras más en la dirección de @@@ ?",
+                "y con respecto a @@@ ?",
+                "y qué cambiaría eso en relación con @@@ ?"
             ],
             "ru": [
                 "и какие конкретные улучшения ты бы предложил",
                 "а если учитывать текущие мировые кризисы, как ты это оцениваешь",
                 "невероятно, это сильно",
                 "можешь раскрыть это чуть подробнее",
-                "к каким долгосрочным последствиям это может привести"
+                "к каким долгосрочным последствиям это может привести",
+                "а если развить эту мысль в сторону @@@?",
+                "а в отношении @@@?",
+                "и что это изменило бы в контексте @@@?"
+            ],
+            "it": [
+                "e se lo spingessi un po' di più nella direzione di @@@?",
+                "e in relazione a @@@?",
+                "e cosa cambierebbe rispetto a @@@?"
+            ],
+            "pt": [
+                "e se você levasse isso mais na direção de @@@?",
+                "e em relação a @@@?",
+                "e o que isso mudaria em relação a @@@?"
+            ],
+            "nl": [
+                "en als je dat verder doordenkt in de richting van @@@?",
+                "en met betrekking tot @@@?",
+                "en wat zou dat veranderen aan @@@?"
+            ],
+            "pl": [
+                "a gdyby pociągnąć to dalej w stronę @@@?",
+                "a w odniesieniu do @@@?",
+                "a co to zmieniłoby w kwestii @@@?"
+            ],
+            "hi": [
+                "और अगर तुम इसे @@@ की दिशा में आगे सोचो?",
+                "और @@@ के संदर्भ में?",
+                "और इससे @@@ के बारे में क्या बदल जाएगा?"
+            ],
+            "ja": [
+                "それを@@@の方向にもう少し考えるとどうなりますか。",
+                "@@@との関係ではどうですか。",
+                "それによって@@@はどう変わりますか。"
+            ],
+            "ko": [
+                "그것을 @@@ 쪽으로 더 생각해 보면 어떨까요?",
+                "그리고 @@@와 관련해서는요?",
+                "그리고 그것이 @@@에 대해 무엇을 바꿀까요?"
             ]
+        },
+        "topic_words": {
+            "de": ["weltraum", "gendering", "zombies", "kultur", "nachrichten", "weltgeschehen", "sexualität", "medizin", "technologie", "unterhaltung", "kino", "weltherrschaft", "natur", "gesundheit", "krankheiten", "krieg", "computer", "künstliche intelligenz", "musik", "geschichte", "philosophie", "träume", "mode", "fernsehen", "essen", "psychologie", "reisen", "spiele", "mythen"],
+            "en": ["space", "gendering", "zombies", "culture", "news", "world affairs", "sexuality", "medicine", "technology", "entertainment", "cinema", "world domination", "nature", "health", "diseases", "war", "computers", "artificial intelligence", "music", "history", "philosophy", "dreams", "fashion", "television", "food", "psychology", "travel", "games", "myths"]
         }
     }
     if AUTO_ANSWER_PATH.exists():
         try:
             existing = json.loads(AUTO_ANSWER_PATH.read_text(encoding="utf-8"))
             if isinstance(existing, dict):
-                phrases = existing.setdefault("phrases", {})
-                for code, items in default_data.get("phrases", {}).items():
-                    current = phrases.setdefault(code, [])
-                    if isinstance(current, list):
-                        seen = {str(x).strip() for x in current}
-                        for item in items:
-                            if item not in seen:
-                                current.append(item)
-                                seen.add(item)
+                for top_key in ["phrases", "topic_words"]:
+                    target = existing.setdefault(top_key, {})
+                    defaults = default_data.get(top_key, {})
+                    if isinstance(target, dict) and isinstance(defaults, dict):
+                        for code, items in defaults.items():
+                            current = target.setdefault(code, [])
+                            if isinstance(current, list):
+                                seen = {str(x).strip() for x in current if str(x).strip()}
+                                for item in items:
+                                    cleaned = str(item).strip()
+                                    if cleaned and cleaned not in seen:
+                                        current.append(cleaned)
+                                        seen.add(cleaned)
                 for key, value in default_data.items():
-                    if key != "phrases" and key not in existing:
+                    if key not in existing:
                         existing[key] = value
                 AUTO_ANSWER_PATH.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
                 return
