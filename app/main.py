@@ -50,7 +50,7 @@ from PyQt6.QtWidgets import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, load_config, save_config, ensure_directories
+from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, load_config, save_config, ensure_directories
 from app.models import ChatMessage, ChatSession
 from app.ollama_client import OllamaClient
 from app.themes import THEMES
@@ -241,6 +241,8 @@ def default_role_names(language_code: str) -> tuple[str, str]:
 TOKEN_PRESET_VALUES = [64, 128, 256, 512, 1024, 2048, 4096, 8192]
 AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
 AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 8
+AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
+AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
 
 
 def nearest_token_preset_index(value: int) -> int:
@@ -376,6 +378,99 @@ def message_visible_content(message: ChatMessage) -> str:
 
 
 
+def estimate_token_count(text: str) -> int:
+    raw = str(text or "")
+    if not raw:
+        return 0
+    words = len(re.findall(r"\S+", raw))
+    by_chars = max(1, (len(raw) + 3) // 4)
+    by_words = max(1, int(words * 1.35))
+    return max(by_chars, by_words)
+
+
+def estimate_chat_payload_tokens(messages: list[dict], system_prompt: str = "") -> int:
+    total = estimate_token_count(system_prompt)
+    for item in messages:
+        total += 8
+        total += estimate_token_count(str(item.get("content", "") or ""))
+    return total
+
+
+def is_context_overflow_error(message: str) -> bool:
+    hay = str(message or "").lower()
+    needles = [
+        'context length', 'maximum context length', 'prompt too long', 'input too long',
+        'token limit', 'too many tokens', 'more than the context window', 'context window',
+        'num_ctx', 'truncate', 'requested tokens exceed', 'llm context', 'ctx'
+    ]
+    return any(needle in hay for needle in needles)
+
+
+def iter_code_blocks(text: str) -> list[tuple[str, str]]:
+    blocks: list[tuple[str, str]] = []
+    pattern = re.compile(r"```([A-Za-z0-9_+.#-]*)[ 	]*\n(.*?)```", re.DOTALL)
+    for match in pattern.finditer(str(text or "")):
+        language = (match.group(1) or "").strip()
+        code = match.group(2) or ""
+        if code.strip():
+            blocks.append((language, code.rstrip() + "\n"))
+    return blocks
+
+
+def code_extension_for_language(language: str, code: str) -> tuple[str, str]:
+    lang = (language or "").strip().lower()
+    mapping = {
+        'python': ('python', 'py'), 'py': ('python', 'py'),
+        'c#': ('csharp', 'cs'), 'cs': ('csharp', 'cs'), 'csharp': ('csharp', 'cs'),
+        'html': ('html', 'htm'), 'htm': ('html', 'htm'),
+        'php': ('php', 'php'),
+        'javascript': ('javascript', 'js'), 'js': ('javascript', 'js'),
+        'typescript': ('typescript', 'ts'), 'ts': ('typescript', 'ts'),
+        'json': ('json', 'json'),
+        'yaml': ('yaml', 'yml'), 'yml': ('yaml', 'yml'),
+        'xml': ('xml', 'xml'), 'css': ('css', 'css'), 'sql': ('sql', 'sql'),
+        'bash': ('bash', 'sh'), 'sh': ('bash', 'sh'), 'zsh': ('bash', 'sh'),
+        'powershell': ('powershell', 'ps1'), 'ps1': ('powershell', 'ps1'),
+        'java': ('java', 'java'), 'kotlin': ('kotlin', 'kt'), 'swift': ('swift', 'swift'),
+        'go': ('go', 'go'), 'rust': ('rust', 'rs'), 'cpp': ('cpp', 'cpp'), 'c++': ('cpp', 'cpp'),
+        'c': ('c', 'c'), 'ruby': ('ruby', 'rb'), 'perl': ('perl', 'pl'), 'lua': ('lua', 'lua'),
+        'r': ('r', 'r'), 'dart': ('dart', 'dart'), 'scala': ('scala', 'scala'), 'objective-c': ('objectivec', 'm'),
+    }
+    if lang in mapping:
+        return mapping[lang]
+    sample = (code or '').lstrip()[:200].lower()
+    if sample.startswith('<?php'):
+        return ('php', 'php')
+    if sample.startswith('<!doctype html') or sample.startswith('<html'):
+        return ('html', 'htm')
+    if sample.startswith('using system') or 'namespace ' in sample:
+        return ('csharp', 'cs')
+    if sample.startswith('import ') or sample.startswith('from ') or 'def ' in sample:
+        return ('python', 'py')
+    return ((lang or 'text').replace('#', 'sharp').replace('+', 'plus'), 'txt')
+
+
+def save_generated_code_blocks(text: str) -> list[Path]:
+    blocks = iter_code_blocks(text)
+    saved: list[Path] = []
+    if not blocks:
+        return saved
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    for index, (language, code) in enumerate(blocks, 1):
+        folder_name, ext = code_extension_for_language(language, code)
+        target_dir = GENERATED_CODE_DIR / folder_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        base_name = f'{timestamp}_{index:03d}'
+        path = target_dir / f'{base_name}.{ext}'
+        collision = 1
+        while path.exists():
+            collision += 1
+            path = target_dir / f'{base_name}_{collision:02d}.{ext}'
+        path.write_text(code, encoding='utf-8')
+        saved.append(path)
+    return saved
+
+
 def resolve_tts_voice_config_defaults(config: dict) -> tuple[dict, bool]:
     data = dict(config)
     backend = (data.get("tts_backend", "disabled") or "disabled").strip()
@@ -446,6 +541,36 @@ def resolve_tts_voice_config_defaults(config: dict) -> tuple[dict, bool]:
 
 def _normalize_compare_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip()).casefold()
+
+
+def _expand_auto_answer_phrase_templates(phrases: list[str], topic_words: list[str]) -> list[str]:
+    expanded: list[str] = []
+    clean_topics = [str(word or "").strip() for word in topic_words if str(word or "").strip()]
+    unique_topics: list[str] = []
+    seen_topics: set[str] = set()
+    for word in clean_topics:
+        normalized = _normalize_compare_text(word)
+        if not normalized or normalized in seen_topics:
+            continue
+        seen_topics.add(normalized)
+        unique_topics.append(word)
+
+    for phrase in phrases:
+        cleaned = str(phrase or "").strip()
+        if not cleaned:
+            continue
+        if "@@@" not in cleaned:
+            expanded.append(cleaned)
+            continue
+        if not unique_topics:
+            expanded.append(cleaned.replace("@@@", "…"))
+            continue
+        pool = unique_topics[:]
+        random.shuffle(pool)
+        for topic in pool[: min(4, len(pool))]:
+            expanded.append(cleaned.replace("@@@", topic))
+    return expanded
+
 
 
 def _unique_auto_answer_phrases(phrases: list[str], blocked_recent: list[str]) -> list[str]:
@@ -564,12 +689,18 @@ def generate_auto_answer(
     fragment = cleaned[:180].strip(" .!?…:;,-") or cleaned[:180]
     code = (language_code or "de").lower()
     phrases: list[str] = []
+    topic_words: list[str] = []
     if isinstance(phrase_data, dict):
         phrases_map = phrase_data.get("phrases")
         if isinstance(phrases_map, dict):
             phrases = [str(x).strip() for x in phrases_map.get(code, []) if str(x).strip()]
             if not phrases and code != "en":
                 phrases = [str(x).strip() for x in phrases_map.get("en", []) if str(x).strip()]
+        topic_words_map = phrase_data.get("topic_words")
+        if isinstance(topic_words_map, dict):
+            topic_words = [str(x).strip() for x in topic_words_map.get(code, []) if str(x).strip()]
+            if not topic_words and code != "en":
+                topic_words = [str(x).strip() for x in topic_words_map.get("en", []) if str(x).strip()]
 
     if code.startswith("de"):
         reflected = _reflect_fragment_de(fragment)
@@ -618,7 +749,7 @@ def generate_auto_answer(
         ]
 
     blocked_recent = recent_generated_user_messages or []
-    phrase_candidates = _unique_auto_answer_phrases(phrases, blocked_recent)
+    phrase_candidates = _unique_auto_answer_phrases(_expand_auto_answer_phrase_templates(phrases, topic_words), blocked_recent)
     eliza_candidates = [t for t in templates if t.strip()]
     eliza_share = max(0, min(100, int(eliza_share_percent or 0)))
 
@@ -1421,6 +1552,15 @@ class SettingsDialog(QDialog):
         context_row.addWidget(self.context_limit)
         limits_layout.addLayout(context_row)
 
+        rollover_row = QHBoxLayout()
+        rollover_row.addWidget(QLabel(self.t("rollover_carry_messages_label", "Letzte Dialogeinträge für Folge-Chat")), 1)
+        self.rollover_carry_messages = QSpinBox()
+        self.rollover_carry_messages.setRange(2, 40)
+        self.rollover_carry_messages.setValue(int(self.config.get("rollover_carry_messages", AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES) or AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES))
+        self.rollover_carry_messages.setToolTip(self.t("rollover_carry_messages_tooltip", "Wie viele der letzten Chat-Einträge beim automatischen Folge-Chat übernommen werden. Falls der Kontext trotzem zu groß wäre, wird zusätzlich automatisch weiter gekürzt."))
+        rollover_row.addWidget(self.rollover_carry_messages)
+        limits_layout.addLayout(rollover_row)
+
         self.content_layout.addWidget(limits_frame)
 
         self.sapi_group = QFrame()
@@ -1697,6 +1837,7 @@ class SettingsDialog(QDialog):
         data["auto_answer_eliza_share"] = int(self.auto_answer_eliza_share.value())
         data["auto_answer_phrase_repeat_lookback"] = int(self.auto_answer_phrase_repeat_lookback.value())
         data["context_message_limit"] = int(self.context_limit.value())
+        data["rollover_carry_messages"] = int(self.rollover_carry_messages.value())
         data["windows_sapi_rate"] = int(self.sapi_rate_slider.value())
         data["windows_sapi_pitch"] = int(self.sapi_pitch_slider.value())
         data["windows_sapi_volume"] = int(self.sapi_volume_slider.value())
@@ -2014,6 +2155,8 @@ class MainWindow(QMainWindow):
         self.auto_answer_waiting_for_user_audio = False
         self.auto_answer_rounds_current = 0
         self.current_request_consumes_rollover_short_instruction = False
+        self.context_retry_in_progress = False
+        self.last_saved_code_paths: list[Path] = []
 
         self.setWindowTitle(self.t("app_title", "OllamaVibeDesk"))
         self.audio_error_signal.connect(self._on_audio_error)
@@ -2534,30 +2677,61 @@ class MainWindow(QMainWindow):
         limit = int(self.config.get("context_message_limit", AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT) or AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT)
         return max(6, limit)
 
-    def _ensure_safe_session_capacity(self, additional_messages: int = 0, auto_answer_only: bool = False) -> bool:
+    def _rollover_carry_message_count(self) -> int:
+        configured = int(self.config.get("rollover_carry_messages", AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES) or AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES)
+        return max(2, configured)
+
+    def _request_token_budget(self) -> int:
+        max_tokens = max(1, int(self.config.get("chat_max_tokens", 512) or 512))
+        return max(AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET, max_tokens * AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR)
+
+    def _would_exceed_request_budget(self, messages: list[dict], system_prompt: str) -> bool:
+        projected = estimate_chat_payload_tokens(messages, system_prompt) + max(0, int(self.config.get("chat_max_tokens", 512) or 512))
+        return projected > self._request_token_budget()
+
+    def _clone_message_for_rollover(self, msg: ChatMessage) -> ChatMessage:
+        return ChatMessage(
+            role=msg.role,
+            content=msg.content,
+            created_at=msg.created_at,
+            generated=bool(getattr(msg, "generated", False)),
+            audio_path=msg.audio_path,
+            display_content=getattr(msg, "display_content", None),
+        )
+
+    def _trim_carry_messages_to_budget(self, messages: list[ChatMessage], system_prompt: str) -> tuple[list[ChatMessage], bool]:
+        trimmed = list(messages)
+        shortened = False
+        while len(trimmed) > 2:
+            payload = [{"role": item.role, "content": item.content} for item in trimmed if item.role in {"user", "assistant"}]
+            if not self._would_exceed_request_budget(payload, system_prompt):
+                break
+            shortened = True
+            trimmed = trimmed[1:]
+            while trimmed and trimmed[0].role == "assistant" and len(trimmed) > 1:
+                trimmed = trimmed[1:]
+        return trimmed, shortened
+
+    def _ensure_safe_session_capacity(self, additional_messages: int = 0, auto_answer_only: bool = False, pending_messages: list[dict] | None = None, system_prompt: str = "") -> bool:
         if not self.current_session:
             return False
         if auto_answer_only and not self.auto_answer_checkbox.isChecked():
             return False
         threshold = self._session_rollover_threshold()
         current_count = len(self.current_session.messages)
-        if current_count + max(0, int(additional_messages or 0)) <= threshold:
+        exceeds_count = current_count + max(0, int(additional_messages or 0)) > threshold
+        exceeds_budget = bool(pending_messages) and self._would_exceed_request_budget(pending_messages, system_prompt)
+        if not exceeds_count and not exceeds_budget:
             return False
-        carry_count = min(AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES, max(4, threshold // 4), current_count)
-        if carry_count <= 0:
-            return False
+        carry_count = min(self._rollover_carry_message_count(), max(2, current_count))
         carry_messages = [
-            ChatMessage(
-                role=msg.role,
-                content=msg.content,
-                created_at=msg.created_at,
-                generated=bool(getattr(msg, "generated", False)),
-                audio_path=msg.audio_path,
-                display_content=getattr(msg, "display_content", None),
-            )
+            self._clone_message_for_rollover(msg)
             for msg in self.current_session.messages[-carry_count:]
             if msg.role in {"user", "assistant"}
         ]
+        if not carry_messages:
+            return False
+        carry_messages, shortened = self._trim_carry_messages_to_budget(carry_messages, system_prompt)
         if not carry_messages:
             return False
         old_title = self.current_session.title
@@ -2576,10 +2750,11 @@ class MainWindow(QMainWindow):
         self.store.save(session)
         self.refresh_sessions_ui()
         self.open_session(session.session_id)
-        self.statusBar().showMessage(
-            self.t("chat_rollover_message", "Ein neuer Folge-Chat wurde mit den letzten Nachrichten geöffnet, damit das Gespräch stabil weiterlaufen kann."),
-            4500,
-        )
+        status_key = "chat_rollover_trimmed_message" if shortened else "chat_rollover_message"
+        status_default = "Ein neuer Folge-Chat wurde mit den letzten Nachrichten geöffnet, damit das Gespräch stabil weiterlaufen kann."
+        if shortened:
+            status_default = "Ein neuer Folge-Chat wurde geöffnet. Dabei wurden automatisch nur so viele letzte Nachrichten übernommen, dass der Kontext stabil weiterlaufen kann."
+        self.statusBar().showMessage(self.t(status_key, status_default), 5000)
         return True
 
     def _current_auto_answer_short_instruction(self) -> str:
@@ -2673,7 +2848,15 @@ class MainWindow(QMainWindow):
         return user_message
 
     def _begin_assistant_request(self) -> None:
-        self._ensure_safe_session_capacity(additional_messages=1, auto_answer_only=True)
+        system_prompt = self.request_system_prompt()
+        preview_messages = self.session_messages_for_api()
+        self._ensure_safe_session_capacity(
+            additional_messages=1,
+            auto_answer_only=True,
+            pending_messages=preview_messages,
+            system_prompt=system_prompt,
+        )
+        system_prompt = self.request_system_prompt()
         selected_model = self.model_combo.currentText().strip()
         previous_model = (self.last_requested_model or "").strip()
         assistant_message = ChatMessage.now("assistant", "")
@@ -2692,7 +2875,7 @@ class MainWindow(QMainWindow):
         self.current_request_consumes_rollover_short_instruction = False
         self._set_request_feedback("sent")
         self._flush_chat_ui()
-        self.start_worker(messages, self.request_system_prompt())
+        self.start_worker(messages, system_prompt)
         self.stop_btn.setEnabled(True)
         self._set_request_feedback("waiting")
 
@@ -2788,6 +2971,7 @@ class MainWindow(QMainWindow):
     def on_worker_finished(self) -> None:
         self.stop_btn.setEnabled(False)
         self.send_btn.setEnabled(True)
+        self.context_retry_in_progress = False
         final_text = self.current_assistant_text.strip()
         if not final_text:
             final_text = 'Keine Textantwort von Ollama empfangen. Bitte Modell/Prompt prüfen oder erneut senden.'
@@ -2799,6 +2983,7 @@ class MainWindow(QMainWindow):
             assistant_message = self.current_session.messages[-1]
             self.store.save(self.current_session)
             self.refresh_sessions_ui()
+        self.last_saved_code_paths = save_generated_code_blocks(final_text)
         auto_read = assistant_message is not None and self.config.get("auto_read_assistant_responses", True) and self.config.get("tts_backend", "disabled") != "disabled"
         if assistant_message is not None and auto_read:
             self.read_aloud_message(assistant_message, show_disabled_message=False, allow_autoplay=True)
@@ -2810,11 +2995,37 @@ class MainWindow(QMainWindow):
         self.current_request_consumes_rollover_short_instruction = False
         self._set_request_feedback("finished")
         self._flush_chat_ui()
-        self.statusBar().showMessage(self.t("answer_finished", "Antwort abgeschlossen."), 2500)
+        if self.last_saved_code_paths:
+            self.statusBar().showMessage(self.t("code_blocks_saved_status", "{count} Codeblock/Codeblöcke wurden zusätzlich im Unterordner generated_code gespeichert.").format(count=len(self.last_saved_code_paths)), 5000)
+        else:
+            self.statusBar().showMessage(self.t("answer_finished", "Antwort abgeschlossen."), 2500)
 
     def on_worker_failed(self, message: str) -> None:
         self.stop_btn.setEnabled(False)
         self.send_btn.setEnabled(True)
+        retry_context = self.auto_answer_checkbox.isChecked() and not self.context_retry_in_progress and is_context_overflow_error(message)
+        if retry_context and self.current_session is not None and self.current_session.messages and self.current_session.messages[-1].role == "assistant" and not (self.current_session.messages[-1].content or "").strip():
+            self.current_session.messages.pop()
+            if self.current_assistant_bubble is not None:
+                try:
+                    self.current_assistant_bubble.setParent(None)
+                    self.current_assistant_bubble.deleteLater()
+                except Exception:
+                    pass
+                self.current_assistant_bubble = None
+            self.context_retry_in_progress = True
+            self._ensure_safe_session_capacity(
+                additional_messages=1,
+                auto_answer_only=True,
+                pending_messages=self.session_messages_for_api(),
+                system_prompt=self.request_system_prompt(),
+            )
+            self.store.save(self.current_session)
+            self.refresh_sessions_ui()
+            self.statusBar().showMessage(self.t("context_retry_status", "Kontextgrenze erkannt. Es wird automatisch mit einem Folge-Chat weitergemacht …"), 5000)
+            self._begin_assistant_request()
+            return
+        self.context_retry_in_progress = False
         self.auto_answer_timer.stop()
         self.pending_auto_answer_source = ""
         self.pending_auto_submit_message = None

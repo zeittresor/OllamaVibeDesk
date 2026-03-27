@@ -18,6 +18,7 @@ CHATS_DIR = APP_DATA_DIR / "chats"
 AUDIO_DIR = APP_DATA_DIR / "audio"
 CACHE_DIR = APP_DATA_DIR / "cache"
 EXPORTS_DIR = APP_DATA_DIR / "exports"
+GENERATED_CODE_DIR = APP_DATA_DIR / "generated_code"
 TTS_DIR = APP_DATA_DIR / "tts"
 LANG_DIR = APP_ROOT / "lang"
 SAPI_LEXICON_PATH = TTS_DIR / "sapi_lexicon.json"
@@ -55,6 +56,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "auto_answer_short_answers": True,
     "auto_answer_eliza_share": 60,
     "auto_answer_phrase_repeat_lookback": 3,
+    "rollover_carry_messages": 8,
     "auto_answer_short_instruction_overrides": {},
     "tts_voice_defaults_initialized": False,
 }
@@ -167,7 +169,8 @@ def ensure_default_auto_answer_phrases() -> None:
                 "welche folgen könnte das langfristig haben",
                 "und wenn du das in die richtung @@@ weiter denkst ?",
                 "und im bezug auf @@@ ?",
-                "und was würde das bei @@@ verändern ?"
+                "und was würde das bei @@@ verändern ?",
+                "erstell deine bisherige sichtweise mal bitte mit python als code mit GUI (ohne mich nach details zu fragen) die nicht nur rein textbasierend verdeutlicht was du meinst (gern mit extra funktionen die dir relevant erscheinen und den requirements als kommentar im code ohne dafür eine extra datei zu erstellen). komme anschliessend bitte zurück zu mir auf die ebene auf der wir und jetzt gerade unterhalten"
             ],
             "en": [
                 "and would you have concrete suggestions for improvement",
@@ -177,7 +180,8 @@ def ensure_default_auto_answer_phrases() -> None:
                 "what long-term consequences could that have",
                 "and what if you think that further in the direction of @@@?",
                 "and in relation to @@@?",
-                "and what would that change about @@@?"
+                "and what would that change about @@@?",
+                "please create your current point of view as Python code with a GUI (without asking me for details) so that it illustrates what you mean in a way that is not purely text-based, including any extra functions you consider relevant and the requirements as comments in the code without creating a separate file for them. Afterwards, please return to the level on which we are talking right now"
             ],
             "fr": [
                 "et aurais-tu des propositions d'amélioration concrètes",
@@ -187,7 +191,8 @@ def ensure_default_auto_answer_phrases() -> None:
                 "quelles conséquences cela pourrait-il avoir à long terme",
                 "et si tu poussais cela davantage dans la direction de @@@ ?",
                 "et par rapport à @@@ ?",
-                "et qu'est-ce que cela changerait concernant @@@ ?"
+                "et qu'est-ce que cela changerait concernant @@@ ?",
+                "merci de créer ton point de vue actuel en code Python avec une interface graphique (sans me demander de détails), de manière à illustrer ce que tu veux dire autrement que par du simple texte, avec volontiers des fonctions supplémentaires que tu juges pertinentes et les requirements en commentaire dans le code sans créer de fichier séparé. Ensuite, reviens s'il te plaît au niveau sur lequel nous parlons en ce moment"
             ],
             "es": [
                 "y tendrías propuestas concretas de mejora",
@@ -197,7 +202,8 @@ def ensure_default_auto_answer_phrases() -> None:
                 "qué consecuencias podría tener a largo plazo",
                 "y si lo pensaras más en la dirección de @@@ ?",
                 "y con respecto a @@@ ?",
-                "y qué cambiaría eso en relación con @@@ ?"
+                "y qué cambiaría eso en relación con @@@ ?",
+                "por favor, crea tu punto de vista actual como código Python con GUI (sin pedirme detalles) para ilustrar lo que quieres decir de una manera que no sea solo texto, con funciones extra que consideres relevantes y los requirements como comentarios en el código sin crear un archivo aparte. Después vuelve, por favor, al nivel en el que estamos conversando ahora mismo"
             ],
             "ru": [
                 "и какие конкретные улучшения ты бы предложил",
@@ -207,17 +213,20 @@ def ensure_default_auto_answer_phrases() -> None:
                 "к каким долгосрочным последствиям это может привести",
                 "а если развить эту мысль в сторону @@@?",
                 "а в отношении @@@?",
-                "и что это изменило бы в контексте @@@?"
+                "и что это изменило бы в контексте @@@?",
+                "пожалуйста, создай своё текущее видение в виде Python-кода с GUI (не спрашивая меня о деталях), чтобы это наглядно показывало твою мысль не только текстом; можно добавить дополнительные функции, которые ты считаешь важными, и requirements в комментариях внутри кода без отдельного файла. После этого, пожалуйста, вернись ко мне на тот уровень, на котором мы сейчас разговариваем"
             ],
             "it": [
                 "e se lo spingessi un po' di più nella direzione di @@@?",
                 "e in relazione a @@@?",
-                "e cosa cambierebbe rispetto a @@@?"
+                "e cosa cambierebbe rispetto a @@@?",
+                "per favore crea il tuo punto di vista attuale come codice Python con GUI (senza chiedermi dettagli) così da mostrare ciò che intendi in modo non solo testuale, con eventuali funzioni extra che ritieni rilevanti e i requirements come commenti nel codice senza creare un file separato. Poi torna per favore al livello su cui stiamo parlando adesso"
             ],
             "pt": [
                 "e se você levasse isso mais na direção de @@@?",
                 "e em relação a @@@?",
-                "e o que isso mudaria em relação a @@@?"
+                "e o que isso mudaria em relação a @@@?",
+                "por favor, crie sua visão atual como código Python com GUI (sem me pedir detalhes), de modo que mostre o que você quer dizer de uma forma que não seja apenas texto, com funções extras que você considere relevantes e os requirements como comentários no código sem criar um arquivo separado. Depois, por favor, volte ao nível em que estamos conversando agora"
             ],
             "nl": [
                 "en als je dat verder doordenkt in de richting van @@@?",
@@ -285,6 +294,7 @@ def ensure_directories() -> None:
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    GENERATED_CODE_DIR.mkdir(parents=True, exist_ok=True)
     TTS_DIR.mkdir(parents=True, exist_ok=True)
     LANG_DIR.mkdir(parents=True, exist_ok=True)
     ensure_default_sapi_lexicon()
