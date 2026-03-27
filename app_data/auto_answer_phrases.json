@@ -34,7 +34,10 @@
       "welches ganz andere thema berührt das für dich indirekt trotzdem noch",
       "bevor wir tiefer gehen: was wäre eine unerwartete seitenstraße dieses gesprächs",
       "hast du lust, das sanft in eine andere richtung zu drehen",
-      "was wäre jetzt eine frage, die das gespräch elegant umlenkt"
+      "was wäre jetzt eine frage, die das gespräch elegant umlenkt",
+      "und wenn du das in die richtung @@@ weiter denkst ?",
+      "und im bezug auf @@@ ?",
+      "und was würde das bei @@@ verändern ?"
     ],
     "en": [
       "and would you have concrete suggestions for improvement",
@@ -69,7 +72,10 @@
       "what unexpectedly different topic still brushes against this one",
       "before we go deeper, what side road from this conversation would tempt you most",
       "would you like to steer this into a softer change of topic",
-      "what question could elegantly redirect this conversation now"
+      "what question could elegantly redirect this conversation now",
+      "and what if you think that further in the direction of @@@?",
+      "and in relation to @@@?",
+      "and what would that change about @@@?"
     ],
     "es": [
       "y tendrías propuestas concretas de mejora",
@@ -85,7 +91,10 @@
       "¿dónde te gustaría replantearlo de nuevo?",
       "¿podrías contarlo de forma más divertida con un giro de trama?",
       "vale, ya entendí todo eso, gracias. hablemos de algo muy distinto",
-      "podríamos desviar suavemente la conversación hacia otro tema — ¿se te ocurre algo?"
+      "podríamos desviar suavemente la conversación hacia otro tema — ¿se te ocurre algo?",
+      "y si lo pensaras más en la dirección de @@@ ?",
+      "y con respecto a @@@ ?",
+      "y qué cambiaría eso en relación con @@@ ?"
     ],
     "fr": [
       "et aurais-tu des propositions d'amélioration concrètes",
@@ -101,35 +110,59 @@
       "où aimerais-tu le réinventer",
       "peux-tu raconter cela de façon un peu plus drôle avec un retournement de situation ?",
       "d'accord, j'ai bien compris, merci. parlons d'autre chose",
-      "on pourrait bifurquer doucement vers un autre sujet — tu aurais une idée ?"
+      "on pourrait bifurquer doucement vers un autre sujet — tu aurais une idée ?",
+      "et si tu poussais cela davantage dans la direction de @@@ ?",
+      "et par rapport à @@@ ?",
+      "et qu'est-ce que cela changerait concernant @@@ ?"
     ],
     "hi": [
       "okay, I understood all of that, thank you. maybe we can talk about something else",
-      "do you have a different idea we could explore next"
+      "do you have a different idea we could explore next",
+      "और अगर तुम इसे @@@ की दिशा में आगे सोचो?",
+      "और @@@ के संदर्भ में?",
+      "और इससे @@@ के बारे में क्या बदल जाएगा?"
     ],
     "it": [
       "ok, ho capito tutto, grazie. forse possiamo parlare di qualcos'altro",
-      "hai un'altra idea che potremmo esplorare?"
+      "hai un'altra idea che potremmo esplorare?",
+      "e se lo spingessi un po' di più nella direzione di @@@?",
+      "e in relazione a @@@?",
+      "e cosa cambierebbe rispetto a @@@?"
     ],
     "ja": [
       "わかりました、ありがとう。少し別の話題にしてみませんか。",
-      "次に掘り下げたい別のアイデアはありますか。"
+      "次に掘り下げたい別のアイデアはありますか。",
+      "それを@@@の方向にもう少し考えるとどうなりますか。",
+      "@@@との関係ではどうですか。",
+      "それによって@@@はどう変わりますか。"
     ],
     "ko": [
       "알겠어요, 고마워요. 조금 다른 주제로 넘어가 볼까요?",
-      "다음에 탐색해 보고 싶은 다른 아이디어가 있나요?"
+      "다음에 탐색해 보고 싶은 다른 아이디어가 있나요?",
+      "그것을 @@@ 쪽으로 더 생각해 보면 어떨까요?",
+      "그리고 @@@와 관련해서는요?",
+      "그리고 그것이 @@@에 대해 무엇을 바꿀까요?"
     ],
     "nl": [
       "oké, ik heb dat allemaal begrepen, dank je. misschien kunnen we over iets anders praten",
-      "heb je nog een ander idee dat we kunnen verkennen?"
+      "heb je nog een ander idee dat we kunnen verkennen?",
+      "en als je dat verder doordenkt in de richting van @@@?",
+      "en met betrekking tot @@@?",
+      "en wat zou dat veranderen aan @@@?"
     ],
     "pl": [
       "dobrze, wszystko zrozumiałem, dziękuję. może porozmawiajmy o czymś innym",
-      "masz jakiś inny pomysł, który moglibyśmy teraz zbadać?"
+      "masz jakiś inny pomysł, który moglibyśmy teraz zbadać?",
+      "a gdyby pociągnąć to dalej w stronę @@@?",
+      "a w odniesieniu do @@@?",
+      "a co to zmieniłoby w kwestii @@@?"
     ],
     "pt": [
       "ok, entendi tudo isso, obrigado. talvez possamos falar de outra coisa",
-      "você tem outra ideia que poderíamos explorar a seguir?"
+      "você tem outra ideia que poderíamos explorar a seguir?",
+      "e se você levasse isso mais na direção de @@@?",
+      "e em relação a @@@?",
+      "e o que isso mudaria em relação a @@@?"
     ],
     "ru": [
       "и какие конкретные улучшения ты бы предложил",
@@ -145,7 +178,10 @@
       "где бы ты хотел реализовать это заново?",
       "можешь рассказать об этом веселее, с неожиданным сюжетным поворотом?",
       "хорошо, я всё это понял, спасибо. давай поговорим о чём-то совсем другом",
-      "можно я мягко переведу разговор на другую тему — какая идея приходит тебе в голову?"
+      "можно я мягко переведу разговор на другую тему — какая идея приходит тебе в голову?",
+      "а если развить эту мысль в сторону @@@?",
+      "а в отношении @@@?",
+      "и что это изменило бы в контексте @@@?"
     ]
   },
   "topic_words": {
