@@ -253,5 +253,10 @@
   "edit_auto_answer_short_prompt": "추가 프롬프트 편집 …",
   "limits_group_title": "답변 및 자동 응답 제한",
   "strip_emojis_label": "이모지를 읽지 않기",
-  "strip_emojis_tooltip": "TTS 생성 전에 말해질 텍스트에서 이모지와 간단한 이모티콘을 제거합니다."
+  "strip_emojis_tooltip": "TTS 생성 전에 말해질 텍스트에서 이모지와 간단한 이모티콘을 제거합니다.",
+  "rollover_carry_messages_label": "후속 채팅으로 가져갈 최근 대화 항목",
+  "rollover_carry_messages_tooltip": "자동 후속 채팅으로 함께 가져갈 최근 채팅 항목 수입니다. 그래도 컨텍스트가 너무 크면 더 오래된 항목이 자동으로 추가 축소됩니다.",
+  "code_blocks_saved_status": "{count}개의 코드 블록이 generated_code 하위 폴더에도 저장되었습니다.",
+  "context_retry_status": "컨텍스트 한도를 감지했습니다. 앱이 자동으로 후속 채팅에서 계속 진행합니다 …",
+  "chat_rollover_trimmed_message": "후속 채팅이 열렸습니다. 안정적인 컨텍스트를 유지할 수 있는 범위까지만 최근 메시지가 자동으로 이어졌습니다."
 }

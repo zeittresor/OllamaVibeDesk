@@ -253,5 +253,10 @@
   "edit_auto_answer_short_prompt": "Extra prompt bewerken …",
   "limits_group_title": "Limieten voor antwoorden en auto-antwoorden",
   "strip_emojis_label": "Emoji’s niet uitspreken",
-  "strip_emojis_tooltip": "Verwijdert emoji’s en eenvoudige emoticons uit de gesproken tekst voordat TTS wordt gegenereerd."
+  "strip_emojis_tooltip": "Verwijdert emoji’s en eenvoudige emoticons uit de gesproken tekst voordat TTS wordt gegenereerd.",
+  "rollover_carry_messages_label": "Recente dialoogitems voor vervolgchat",
+  "rollover_carry_messages_tooltip": "Hoeveel van de laatste chatitems moeten worden meegenomen naar een automatische vervolgchat. Als de context dan nog te groot zou zijn, worden extra oudere items automatisch ingekort.",
+  "code_blocks_saved_status": "{count} codeblok(ken) zijn extra opgeslagen in de submap generated_code.",
+  "context_retry_status": "Contextlimiet gedetecteerd. De app gaat automatisch verder in een vervolgchat …",
+  "chat_rollover_trimmed_message": "Er is een vervolgchat geopend. Alleen zoveel recente berichten als stabiel mogelijk zijn automatisch meegenomen."
 }

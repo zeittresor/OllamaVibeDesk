@@ -253,5 +253,10 @@
   "auto_answer_limit_reached": "Auto-answer limit reached. Continue manually or increase the limit in settings.",
   "edit_auto_answer_short_prompt": "Edit additional prompt …",
   "auto_answer_short_prompt_dialog_title": "Additional prompt for short auto-answer replies",
-  "auto_answer_short_prompt_dialog_info": "This additional prompt is appended invisibly to the LLM input: for the first user message of a chat and once again for the next user message after an automatic continuation chat. It applies to the currently selected interface language: {language}."
+  "auto_answer_short_prompt_dialog_info": "This additional prompt is appended invisibly to the LLM input: for the first user message of a chat and once again for the next user message after an automatic continuation chat. It applies to the currently selected interface language: {language}.",
+  "rollover_carry_messages_label": "Recent dialog entries for follow-up chat",
+  "rollover_carry_messages_tooltip": "How many of the latest chat entries should be carried into an automatic follow-up chat. If the context would still be too large, older entries are trimmed automatically.",
+  "code_blocks_saved_status": "{count} code block(s) were additionally saved in the generated_code subfolder.",
+  "context_retry_status": "Context limit detected. The app will continue automatically with a follow-up chat …",
+  "chat_rollover_trimmed_message": "A follow-up chat was opened. Only as many recent messages as possible were carried over automatically so the context can continue stably."
 }

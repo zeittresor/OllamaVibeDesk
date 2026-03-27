@@ -253,5 +253,10 @@
   "edit_auto_answer_short_prompt": "追加プロンプトを編集 …",
   "limits_group_title": "応答と自動応答の制限",
   "strip_emojis_label": "絵文字を読み上げない",
-  "strip_emojis_tooltip": "TTS 生成前に、読み上げテキストから絵文字と簡単な顔文字を削除します。"
+  "strip_emojis_tooltip": "TTS 生成前に、読み上げテキストから絵文字と簡単な顔文字を削除します。",
+  "rollover_carry_messages_label": "フォローアップチャットへ引き継ぐ最近の対話項目",
+  "rollover_carry_messages_tooltip": "自動フォローアップチャットへ引き継ぐ直近のチャット項目数です。それでも文脈が大きすぎる場合は、さらに古い項目が自動的に削減されます。",
+  "code_blocks_saved_status": "{count} 個のコードブロックが generated_code サブフォルダにも保存されました。",
+  "context_retry_status": "コンテキスト上限を検出しました。アプリは自動的にフォローアップチャットで続行します …",
+  "chat_rollover_trimmed_message": "フォローアップチャットを開きました。安定したコンテキストを保てる範囲で、直近のメッセージだけが自動的に引き継がれました。"
 }

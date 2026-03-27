@@ -253,5 +253,10 @@
   "auto_answer_limit_reached": "Auto-Answer-Limit erreicht. Schreibe selbst weiter oder erhöhe das Limit in den Einstellungen.",
   "edit_auto_answer_short_prompt": "Zusatzprompt bearbeiten …",
   "auto_answer_short_prompt_dialog_title": "Zusatzprompt für kurze Auto-Answer-Antworten",
-  "auto_answer_short_prompt_dialog_info": "Dieser Zusatzprompt wird unsichtbar an das LLM angehängt: beim ersten Nutzerbeitrag eines Chats und nach einem automatischen Folge-Chat noch einmal beim nächsten Nutzerbeitrag. Er gilt für die aktuell gewählte Oberflächensprache: {language}."
+  "auto_answer_short_prompt_dialog_info": "Dieser Zusatzprompt wird unsichtbar an das LLM angehängt: beim ersten Nutzerbeitrag eines Chats und nach einem automatischen Folge-Chat noch einmal beim nächsten Nutzerbeitrag. Er gilt für die aktuell gewählte Oberflächensprache: {language}.",
+  "rollover_carry_messages_label": "Letzte Dialogeinträge für Folge-Chat",
+  "rollover_carry_messages_tooltip": "Wie viele der letzten Chat-Einträge beim automatischen Folge-Chat übernommen werden. Falls der Kontext trotzdem zu groß wäre, wird zusätzlich automatisch weiter gekürzt.",
+  "code_blocks_saved_status": "{count} Codeblock/Codeblöcke wurden zusätzlich im Unterordner generated_code gespeichert.",
+  "context_retry_status": "Kontextgrenze erkannt. Es wird automatisch mit einem Folge-Chat weitergemacht …",
+  "chat_rollover_trimmed_message": "Ein neuer Folge-Chat wurde geöffnet. Dabei wurden automatisch nur so viele letzte Nachrichten übernommen, dass der Kontext stabil weiterlaufen kann."
 }

@@ -253,5 +253,10 @@
   "edit_auto_answer_short_prompt": "Editar prompt adicional …",
   "limits_group_title": "Limites de resposta e resposta automática",
   "strip_emojis_label": "Não ler emojis",
-  "strip_emojis_tooltip": "Remove emojis e emoticons simples do texto falado antes da geração do TTS."
+  "strip_emojis_tooltip": "Remove emojis e emoticons simples do texto falado antes da geração do TTS.",
+  "rollover_carry_messages_label": "Entradas recentes de diálogo para o chat de continuação",
+  "rollover_carry_messages_tooltip": "Quantas das últimas entradas do chat devem ser levadas para um chat de continuação automático. Se o contexto ainda ficasse grande demais, entradas mais antigas serão reduzidas automaticamente.",
+  "code_blocks_saved_status": "{count} bloco(s) de código também foram salvos na subpasta generated_code.",
+  "context_retry_status": "Limite de contexto detectado. O aplicativo continuará automaticamente com um chat de continuação …",
+  "chat_rollover_trimmed_message": "Um chat de continuação foi aberto. Apenas a quantidade de mensagens recentes compatível com um contexto estável foi levada automaticamente."
 }
