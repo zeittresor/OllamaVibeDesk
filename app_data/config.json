@@ -21,5 +21,16 @@
   "read_all_include_names": false,
   "user_display_name": "",
   "assistant_display_name": "",
-  "tts_voice_defaults_initialized": false
+  "tts_voice_defaults_initialized": false,
+  "auto_read_user_inputs": false,
+  "strip_emojis_for_tts": true,
+  "chat_max_tokens": 512,
+  "auto_answer_max_rounds": 0,
+  "context_message_limit": 8,
+  "auto_answer_short_answers": true,
+  "auto_answer_eliza_share": 30,
+  "auto_answer_phrase_repeat_lookback": 1,
+  "rollover_carry_messages": 5,
+  "auto_answer_short_instruction_overrides": {},
+  "debug_trace_enabled": false
 }
