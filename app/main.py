@@ -50,7 +50,7 @@ from PyQt6.QtWidgets import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, load_config, save_config, ensure_directories
+from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, DEBUG_LOG_DIR, SETTINGS_PROFILE_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, DEFAULT_CONFIG, load_config, save_config, ensure_directories
 from app.models import ChatMessage, ChatSession
 from app.ollama_client import OllamaClient
 from app.themes import THEMES
@@ -240,7 +240,7 @@ def default_role_names(language_code: str) -> tuple[str, str]:
 
 TOKEN_PRESET_VALUES = [64, 128, 256, 512, 1024, 2048, 4096, 8192]
 AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
-AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 8
+AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 5
 AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
 AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
 
@@ -469,6 +469,40 @@ def save_generated_code_blocks(text: str) -> list[Path]:
         path.write_text(code, encoding='utf-8')
         saved.append(path)
     return saved
+
+
+class DebugTraceLogger:
+    def __init__(self, enabled: bool = False) -> None:
+        self.run_id = uuid.uuid4().hex
+        self.path = DEBUG_LOG_DIR / f"debug_{datetime.now().strftime('%Y%m%d-%H%M%S')}_{self.run_id[:8]}.jsonl"
+        self.enabled = False
+        if enabled:
+            self.set_enabled(True)
+
+    def set_enabled(self, enabled: bool) -> bool:
+        enabled = bool(enabled)
+        created = False
+        if enabled and not self.path.exists():
+            DEBUG_LOG_DIR.mkdir(parents=True, exist_ok=True)
+            self.path.touch()
+            created = True
+        self.enabled = enabled
+        return created
+
+    def write(self, event: str, payload: dict | None = None) -> None:
+        if not self.enabled:
+            return
+        entry = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "run_id": self.run_id,
+            "event": str(event or "event"),
+            "payload": payload or {},
+        }
+        try:
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
 
 
 def resolve_tts_voice_config_defaults(config: dict) -> tuple[dict, bool]:
@@ -1460,6 +1494,11 @@ class SettingsDialog(QDialog):
         short_answers_row.addWidget(self.edit_auto_answer_short_prompt_btn)
         self.content_layout.addLayout(short_answers_row)
 
+        self.debug_trace_enabled = QCheckBox(self.t("debug_trace_enabled_label", "Detailliertes Debug-Log schreiben"))
+        self.debug_trace_enabled.setChecked(bool(self.config.get("debug_trace_enabled", False)))
+        self.debug_trace_enabled.setToolTip(self.t("debug_trace_enabled_tooltip", "Schreibt eine zusätzliche JSONL-Debugdatei in app_data/debug_logs mit Chat-Verlauf, geschätzten Tokenwerten, Request-Daten, Folge-Chat-Wechseln und den dabei aktiven Einstellungen. Diese Datei kann später zur Fehlersuche geschickt werden."))
+        self.content_layout.addWidget(self.debug_trace_enabled)
+
         limits_frame = QFrame()
         limits_layout = QVBoxLayout(limits_frame)
         limits_layout.setContentsMargins(0, 8, 0, 0)
@@ -1520,7 +1559,7 @@ class SettingsDialog(QDialog):
         self.auto_answer_eliza_share.setPageStep(10)
         self.auto_answer_eliza_share.setTickInterval(10)
         self.auto_answer_eliza_share.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.auto_answer_eliza_share.setValue(int(self.config.get("auto_answer_eliza_share", 60) or 60))
+        self.auto_answer_eliza_share.setValue(int(self.config.get("auto_answer_eliza_share", 30) or 30))
         eliza_slider_row.addWidget(self.auto_answer_eliza_share, 1)
         self.auto_answer_eliza_share_value = QLabel()
         self.auto_answer_eliza_share_value.setMinimumWidth(118)
@@ -1538,7 +1577,7 @@ class SettingsDialog(QDialog):
         phrase_repeat_row.addWidget(QLabel(self.t("auto_answer_phrase_repeat_lookback_label", "Wie viele letzte Auto-Answer-Benutzertexte nicht wiederholt werden dürfen")), 1)
         self.auto_answer_phrase_repeat_lookback = QSpinBox()
         self.auto_answer_phrase_repeat_lookback.setRange(0, 50)
-        self.auto_answer_phrase_repeat_lookback.setValue(int(self.config.get("auto_answer_phrase_repeat_lookback", 3) or 3))
+        self.auto_answer_phrase_repeat_lookback.setValue(int(self.config.get("auto_answer_phrase_repeat_lookback", 1) or 1))
         self.auto_answer_phrase_repeat_lookback.setToolTip(self.t("auto_answer_phrase_repeat_lookback_tooltip", "Bei Standardsätzen werden die letzten automatisch erzeugten Benutzertexte berücksichtigt. Wenn nicht genug verschiedene Standardsätze übrig bleiben, wird automatisch ELIZA verwendet."))
         phrase_repeat_row.addWidget(self.auto_answer_phrase_repeat_lookback)
         limits_layout.addLayout(phrase_repeat_row)
@@ -1547,7 +1586,7 @@ class SettingsDialog(QDialog):
         context_row.addWidget(QLabel(self.t("context_limit_label", "Kontextfenster für Antworten (Nachrichten)")), 1)
         self.context_limit = QSpinBox()
         self.context_limit.setRange(6, 200)
-        self.context_limit.setValue(int(self.config.get("context_message_limit", 40) or 40))
+        self.context_limit.setValue(int(self.config.get("context_message_limit", 8) or 8))
         self.context_limit.setToolTip(self.t("context_limit_tooltip", "Nur die letzten N Nachrichten werden an das Modell gesendet. Das kann längere Auto-Answer-Gespräche stabiler machen."))
         context_row.addWidget(self.context_limit)
         limits_layout.addLayout(context_row)
@@ -1600,6 +1639,19 @@ class SettingsDialog(QDialog):
         self.system_prompt.setPlaceholderText(self.t("system_prompt_placeholder", "Optionaler System-Prompt für neue Anfragen"))
         self.system_prompt.setFixedHeight(110)
         add_row(self.t("system_prompt_label", "System-Prompt"), self.system_prompt)
+
+        profile_row = QHBoxLayout()
+        profile_info = QLabel(self.t("settings_profile_hint", "Konfigurationen laden oder speichern, inklusive System-Prompt und Zusatzprompt-Einstellungen."))
+        profile_info.setObjectName("SubtleLabel")
+        profile_info.setWordWrap(True)
+        profile_row.addWidget(profile_info, 1)
+        self.load_settings_profile_btn = QPushButton(self.t("load_settings_profile", "Konfiguration laden …"))
+        self.load_settings_profile_btn.clicked.connect(self.load_settings_profile)
+        profile_row.addWidget(self.load_settings_profile_btn)
+        self.save_settings_profile_btn = QPushButton(self.t("save_settings_profile", "Konfiguration speichern …"))
+        self.save_settings_profile_btn.clicked.connect(self.save_settings_profile)
+        profile_row.addWidget(self.save_settings_profile_btn)
+        self.content_layout.addLayout(profile_row)
 
         self.content_layout.addStretch(1)
 
@@ -1805,6 +1857,105 @@ class SettingsDialog(QDialog):
         self.user_display_name.setPlaceholderText(user_default)
         self.assistant_display_name.setPlaceholderText(assistant_default)
 
+    def _set_combo_data_value(self, combo: QComboBox, value: str, fallback_index: int = 0) -> None:
+        index = combo.findData(value)
+        combo.setCurrentIndex(index if index >= 0 else fallback_index)
+
+    def _set_combo_text_value(self, combo: QComboBox, value: str) -> None:
+        if combo.findText(value) < 0 and combo.isEditable() and value:
+            combo.addItem(value)
+        index = combo.findText(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+        elif combo.isEditable():
+            combo.setCurrentText(value)
+
+    def apply_config_to_widgets(self, profile_data: dict) -> None:
+        merged = DEFAULT_CONFIG.copy()
+        merged.update(profile_data or {})
+        if "tts_lexicon_enabled" not in merged:
+            merged["tts_lexicon_enabled"] = bool(merged.get("windows_sapi_lexicon_enabled", True))
+        merged["windows_sapi_lexicon_enabled"] = bool(merged.get("tts_lexicon_enabled", True))
+        if not merged.get("tts_user_voice"):
+            merged["tts_user_voice"] = merged.get("tts_voice", "")
+
+        self.config = merged
+        self.translations = load_language_pack(merged.get("interface_language", "de"))
+
+        self._set_combo_data_value(self.interface_language, merged.get("interface_language", "de"), 0)
+        self._set_combo_text_value(self.theme_combo, str(merged.get("theme", "Midnight") or "Midnight"))
+        self.ollama_url.setText(str(merged.get("ollama_base_url", DEFAULT_CONFIG["ollama_base_url"]) or DEFAULT_CONFIG["ollama_base_url"]))
+        self._set_combo_data_value(self.tts_backend, merged.get("tts_backend", "disabled"), 0)
+        self.tts_url.setText(str(merged.get("tts_base_url", DEFAULT_CONFIG["tts_base_url"]) or DEFAULT_CONFIG["tts_base_url"]))
+        self._set_combo_text_value(self.tts_model, str(merged.get("tts_model", DEFAULT_CONFIG["tts_model"]) or DEFAULT_CONFIG["tts_model"]))
+
+        self.autoplay.setChecked(bool(merged.get("autoplay_tts", True)))
+        self.auto_read_responses.setChecked(bool(merged.get("auto_read_assistant_responses", True)))
+        self.auto_read_user_inputs.setChecked(bool(merged.get("auto_read_user_inputs", False)))
+        self.read_all_include_names.setChecked(bool(merged.get("read_all_include_names", False)))
+        self.user_display_name.setText(str(merged.get("user_display_name", "") or ""))
+        self.assistant_display_name.setText(str(merged.get("assistant_display_name", "") or ""))
+        self.tts_lexicon.setChecked(bool(merged.get("tts_lexicon_enabled", True)))
+        self.strip_emojis.setChecked(bool(merged.get("strip_emojis_for_tts", True)))
+        self.auto_answer_short_answers.setChecked(bool(merged.get("auto_answer_short_answers", True)))
+        self.debug_trace_enabled.setChecked(bool(merged.get("debug_trace_enabled", False)))
+        self.chat_max_tokens.setValue(int(merged.get("chat_max_tokens", DEFAULT_CONFIG["chat_max_tokens"]) or DEFAULT_CONFIG["chat_max_tokens"]))
+        self.auto_answer_rounds.setValue(int(merged.get("auto_answer_max_rounds", DEFAULT_CONFIG["auto_answer_max_rounds"]) or DEFAULT_CONFIG["auto_answer_max_rounds"]))
+        self.auto_answer_eliza_share.setValue(int(merged.get("auto_answer_eliza_share", DEFAULT_CONFIG["auto_answer_eliza_share"]) or DEFAULT_CONFIG["auto_answer_eliza_share"]))
+        self.auto_answer_phrase_repeat_lookback.setValue(int(merged.get("auto_answer_phrase_repeat_lookback", DEFAULT_CONFIG["auto_answer_phrase_repeat_lookback"]) or DEFAULT_CONFIG["auto_answer_phrase_repeat_lookback"]))
+        self.context_limit.setValue(int(merged.get("context_message_limit", DEFAULT_CONFIG["context_message_limit"]) or DEFAULT_CONFIG["context_message_limit"]))
+        self.rollover_carry_messages.setValue(int(merged.get("rollover_carry_messages", DEFAULT_CONFIG["rollover_carry_messages"]) or DEFAULT_CONFIG["rollover_carry_messages"]))
+        self.sapi_rate_slider.setValue(int(merged.get("windows_sapi_rate", 0) or 0))
+        self.sapi_pitch_slider.setValue(int(merged.get("windows_sapi_pitch", 0) or 0))
+        self.sapi_volume_slider.setValue(int(merged.get("windows_sapi_volume", 100) or 100))
+        self.system_prompt.setPlainText(str(merged.get("system_prompt", "") or ""))
+
+        self._refresh_name_placeholders()
+        self.tts_voice.clear()
+        self.user_tts_voice.clear()
+        self.refresh_tts_voice_options()
+
+    def save_settings_profile(self) -> None:
+        ensure_directories()
+        default_name = SETTINGS_PROFILE_DIR / f"ollamavibedesk_profile_{datetime.now():%Y%m%d-%H%M%S}.json"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.t("save_settings_profile_dialog_title", "Konfiguration speichern"),
+            str(default_name),
+            self.t("json_files_filter", "JSON-Dateien (*.json);;Alle Dateien (*)"),
+        )
+        if not file_path:
+            return
+        profile_data = self.get_config()
+        try:
+            Path(file_path).write_text(json.dumps(profile_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            QMessageBox.critical(self, self.t("save_settings_profile_failed_title", "Konfiguration konnte nicht gespeichert werden"), self.t("save_settings_profile_failed_text", "Die Konfiguration konnte nicht gespeichert werden.\n\n{error}").format(error=exc))
+            return
+        QMessageBox.information(self, self.t("save_settings_profile_done_title", "Konfiguration gespeichert"), self.t("save_settings_profile_done_text", "Die Konfiguration wurde gespeichert:\n{path}").format(path=file_path))
+
+    def load_settings_profile(self) -> None:
+        ensure_directories()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.t("load_settings_profile_dialog_title", "Konfiguration laden"),
+            str(SETTINGS_PROFILE_DIR),
+            self.t("json_files_filter", "JSON-Dateien (*.json);;Alle Dateien (*)"),
+        )
+        if not file_path:
+            return
+        try:
+            raw = Path(file_path).read_text(encoding="utf-8")
+            profile_data = json.loads(raw)
+        except Exception as exc:
+            QMessageBox.critical(self, self.t("load_settings_profile_failed_title", "Konfiguration konnte nicht geladen werden"), self.t("load_settings_profile_failed_text", "Die Konfiguration konnte nicht geladen werden.\n\n{error}").format(error=exc))
+            return
+        if not isinstance(profile_data, dict):
+            QMessageBox.warning(self, self.t("load_settings_profile_invalid_title", "Ungültige Konfiguration"), self.t("load_settings_profile_invalid_text", "Die Datei enthält kein JSON-Objekt mit Einstellungen."))
+            return
+        self.apply_config_to_widgets(profile_data)
+        QMessageBox.information(self, self.t("load_settings_profile_done_title", "Konfiguration geladen"), self.t("load_settings_profile_done_text", "Die Konfiguration wurde in den Dialog übernommen. Mit Speichern wird sie aktiv.\n{path}").format(path=file_path))
+
     def get_config(self) -> dict:
         data = self.config.copy()
         data["interface_language"] = (self.interface_language.currentData() or "de").strip()
@@ -1832,6 +1983,7 @@ class SettingsDialog(QDialog):
         data["windows_sapi_lexicon_enabled"] = data["tts_lexicon_enabled"]
         data["strip_emojis_for_tts"] = self.strip_emojis.isChecked()
         data["auto_answer_short_answers"] = self.auto_answer_short_answers.isChecked()
+        data["debug_trace_enabled"] = self.debug_trace_enabled.isChecked()
         data["chat_max_tokens"] = int(self.chat_max_tokens.value())
         data["auto_answer_max_rounds"] = int(self.auto_answer_rounds.value())
         data["auto_answer_eliza_share"] = int(self.auto_answer_eliza_share.value())
@@ -2157,6 +2309,12 @@ class MainWindow(QMainWindow):
         self.current_request_consumes_rollover_short_instruction = False
         self.context_retry_in_progress = False
         self.last_saved_code_paths: list[Path] = []
+        self.debug_logger = DebugTraceLogger(bool(self.config.get("debug_trace_enabled", False)))
+        self.debug_runtime_prompt_tokens = 0
+        self.debug_runtime_completion_tokens = 0
+        self.debug_runtime_requests = 0
+        self.debug_session_totals: dict[str, dict[str, int]] = {}
+        self.current_request_debug_info: dict = {}
 
         self.setWindowTitle(self.t("app_title", "OllamaVibeDesk"))
         self.audio_error_signal.connect(self._on_audio_error)
@@ -2208,12 +2366,80 @@ class MainWindow(QMainWindow):
 
         self._set_request_feedback("idle")
         self._set_tts_feedback('idle')
+        self._debug_log("app_started", {
+            "log_path": str(self.debug_logger.path),
+            "config": self._debug_config_snapshot(),
+            "sessions_found": len(self.sessions),
+            "platform": sys.platform,
+        })
 
     def t(self, key: str, default: Optional[str] = None) -> str:
         return self.translations.get(key, default or key)
 
     def reload_language_pack(self) -> None:
         self.translations = load_language_pack(self.config.get("interface_language", "de"))
+    def _debug_config_snapshot(self) -> dict:
+        return {
+            "interface_language": self.config.get("interface_language", "de"),
+            "theme": self.config.get("theme", "Midnight"),
+            "model": self.model_combo.currentText().strip() if hasattr(self, "model_combo") else self.config.get("last_model", ""),
+            "auto_answer_enabled": bool(self.config.get("auto_answer_enabled", False)),
+            "auto_answer_short_answers": bool(self.config.get("auto_answer_short_answers", True)),
+            "auto_answer_eliza_share": int(self.config.get("auto_answer_eliza_share", 30) or 30),
+            "auto_answer_phrase_repeat_lookback": int(self.config.get("auto_answer_phrase_repeat_lookback", 1) or 1),
+            "auto_answer_max_rounds": int(self.config.get("auto_answer_max_rounds", 0) or 0),
+            "chat_max_tokens": int(self.config.get("chat_max_tokens", 512) or 512),
+            "context_message_limit": int(self.config.get("context_message_limit", 8) or 8),
+            "rollover_carry_messages": int(self.config.get("rollover_carry_messages", AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES) or AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES),
+            "tts_backend": self.config.get("tts_backend", "disabled"),
+            "auto_read_assistant_responses": bool(self.config.get("auto_read_assistant_responses", True)),
+            "auto_read_user_inputs": bool(self.config.get("auto_read_user_inputs", False)),
+            "debug_trace_enabled": bool(self.config.get("debug_trace_enabled", False)),
+        }
+
+    def _debug_current_chat_token_estimate(self) -> int:
+        return estimate_chat_payload_tokens(self.session_messages_for_api(), self.request_system_prompt())
+
+    def _debug_runtime_totals(self) -> dict:
+        return {
+            "requests": int(self.debug_runtime_requests),
+            "prompt_tokens_estimated": int(self.debug_runtime_prompt_tokens),
+            "completion_tokens_estimated": int(self.debug_runtime_completion_tokens),
+            "tokens_estimated_total": int(self.debug_runtime_prompt_tokens + self.debug_runtime_completion_tokens),
+        }
+
+    def _debug_current_session_totals(self) -> dict:
+        if not self.current_session:
+            return {"requests": 0, "prompt_tokens_estimated": 0, "completion_tokens_estimated": 0, "tokens_estimated_total": 0}
+        stats = self.debug_session_totals.get(self.current_session.session_id, {})
+        prompt = int(stats.get("prompt_tokens_estimated", 0) or 0)
+        completion = int(stats.get("completion_tokens_estimated", 0) or 0)
+        return {
+            "requests": int(stats.get("requests", 0) or 0),
+            "prompt_tokens_estimated": prompt,
+            "completion_tokens_estimated": completion,
+            "tokens_estimated_total": prompt + completion,
+        }
+
+    def _debug_log(self, event: str, extra: dict | None = None) -> None:
+        if not getattr(self, "debug_logger", None):
+            return
+        payload = {
+            "session": {
+                "session_id": self.current_session.session_id if self.current_session else None,
+                "title": self.current_session.title if self.current_session else None,
+                "message_count": len(self.current_session.messages) if self.current_session else 0,
+                "reapply_short_instruction_after_rollover": bool(getattr(self.current_session, "reapply_short_instruction_after_rollover", False)) if self.current_session else False,
+            },
+            "current_chat_tokens_estimated": self._debug_current_chat_token_estimate() if self.current_session else 0,
+            "runtime_totals": self._debug_runtime_totals(),
+            "session_totals": self._debug_current_session_totals(),
+            "config": self._debug_config_snapshot(),
+        }
+        if extra:
+            payload.update(extra)
+        self.debug_logger.write(event, payload)
+
 
     def apply_theme(self, theme_name: str) -> None:
         theme_name = theme_name if theme_name in THEMES else "Midnight"
@@ -2546,6 +2772,7 @@ class MainWindow(QMainWindow):
         self.store.save(session)
         self.refresh_sessions_ui()
         self.open_session(session.session_id)
+        self._debug_log("session_created", {"new_session_id": session.session_id, "new_session_title": session.title})
 
     def delete_current_session(self) -> None:
         if not self.current_session:
@@ -2558,7 +2785,9 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
         session_id = self.current_session.session_id
+        deleted_title = self.current_session.title
         self.store.delete(session_id)
+        self._debug_log("session_deleted", {"deleted_session_id": session_id, "deleted_session_title": deleted_title})
         self.current_session = None
         self.refresh_sessions_ui()
         if self.sessions:
@@ -2593,6 +2822,7 @@ class MainWindow(QMainWindow):
                 break
         self._set_request_feedback("idle")
         self._set_tts_feedback('idle')
+        self._debug_log("session_opened", {"opened_session_id": session_id, "opened_session_title": target.title})
 
     def clear_chat_layout(self) -> None:
         while self.chat_layout.count() > 1:
@@ -2663,7 +2893,7 @@ class MainWindow(QMainWindow):
     def _auto_answer_recent_generated_user_messages(self) -> list[str]:
         if not self.current_session:
             return []
-        lookback = max(0, int(self.config.get("auto_answer_phrase_repeat_lookback", 3) or 0))
+        lookback = max(0, int(self.config.get("auto_answer_phrase_repeat_lookback", 1) or 0))
         if lookback <= 0:
             return []
         items = [
@@ -2755,6 +2985,15 @@ class MainWindow(QMainWindow):
         if shortened:
             status_default = "Ein neuer Folge-Chat wurde geöffnet. Dabei wurden automatisch nur so viele letzte Nachrichten übernommen, dass der Kontext stabil weiterlaufen kann."
         self.statusBar().showMessage(self.t(status_key, status_default), 5000)
+        self._debug_log("session_rollover", {
+            "reason": {"message_count_exceeded": bool(exceeds_count), "token_budget_exceeded": bool(exceeds_budget)},
+            "threshold_message_limit": int(threshold),
+            "carry_count_requested": int(carry_count),
+            "carry_count_final": len(carry_messages),
+            "carry_messages_shortened": bool(shortened),
+            "new_session_id": session.session_id,
+            "new_session_title": session.title,
+        })
         return True
 
     def _current_auto_answer_short_instruction(self) -> str:
@@ -2797,7 +3036,7 @@ class MainWindow(QMainWindow):
             return []
         raw_items = self._request_message_items()
         messages = [{"role": item.role, "content": item.content} for item in raw_items]
-        limit = int(self.config.get("context_message_limit", 40) or 40)
+        limit = int(self.config.get("context_message_limit", 8) or 8)
         if limit > 0 and len(messages) > limit:
             messages = messages[-limit:]
         return messages
@@ -2820,6 +3059,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.t("auto_answer_disabled", "Auto Answer deaktiviert."), 2500)
         else:
             self.statusBar().showMessage(self.t("auto_answer_enabled", "Auto Answer aktiviert."), 2500)
+        self._debug_log("auto_answer_toggled", {"checked": bool(checked)})
 
     def _append_user_message(self, text: str, generated: bool = False) -> ChatMessage:
         if not self.current_session:
@@ -2845,6 +3085,13 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self._flush_chat_ui()
+        self._debug_log("user_message_appended", {
+            "generated": bool(generated),
+            "visible_content": visible_text,
+            "stored_content": stored_content,
+            "hidden_instruction_embedded": bool(embedded_short_instruction),
+            "message_created_at": user_message.created_at,
+        })
         return user_message
 
     def _begin_assistant_request(self) -> None:
@@ -2872,7 +3119,17 @@ class MainWindow(QMainWindow):
         self.last_requested_model = selected_model
 
         messages = self.session_messages_for_api()
+        request_prompt_tokens = estimate_chat_payload_tokens(messages, system_prompt)
+        self.current_request_debug_info = {
+            "prepared_at": datetime.now().isoformat(timespec="seconds"),
+            "messages": messages,
+            "system_prompt": system_prompt,
+            "request_prompt_tokens_estimated": request_prompt_tokens,
+            "response_max_tokens": int(self.config.get("chat_max_tokens", 512) or 512),
+            "request_total_budget_estimated": request_prompt_tokens + int(self.config.get("chat_max_tokens", 512) or 512),
+        }
         self.current_request_consumes_rollover_short_instruction = False
+        self._debug_log("request_prepared", {"request": dict(self.current_request_debug_info)})
         self._set_request_feedback("sent")
         self._flush_chat_ui()
         self.start_worker(messages, system_prompt)
@@ -2909,10 +3166,14 @@ class MainWindow(QMainWindow):
             self.config.get("interface_language", "de"),
             phrase_data,
             recent_generated_user_messages=self._auto_answer_recent_generated_user_messages(),
-            eliza_share_percent=int(self.config.get("auto_answer_eliza_share", 60) or 60),
+            eliza_share_percent=int(self.config.get("auto_answer_eliza_share", 30) or 30),
         )
         if not auto_text:
             return
+        self._debug_log("auto_answer_generated", {
+            "source_text": self.pending_auto_answer_source,
+            "generated_text": auto_text,
+        })
         self.pending_auto_answer_source = ""
         message = self._append_user_message(auto_text, generated=True)
         self.pending_auto_submit_message = message
@@ -2995,6 +3256,24 @@ class MainWindow(QMainWindow):
         self.current_request_consumes_rollover_short_instruction = False
         self._set_request_feedback("finished")
         self._flush_chat_ui()
+        completion_tokens = estimate_token_count(final_text)
+        prompt_tokens = int(self.current_request_debug_info.get("request_prompt_tokens_estimated", 0) or 0)
+        self.debug_runtime_requests += 1
+        self.debug_runtime_prompt_tokens += prompt_tokens
+        self.debug_runtime_completion_tokens += completion_tokens
+        if self.current_session is not None:
+            stats = self.debug_session_totals.setdefault(self.current_session.session_id, {"requests": 0, "prompt_tokens_estimated": 0, "completion_tokens_estimated": 0})
+            stats["requests"] = int(stats.get("requests", 0) or 0) + 1
+            stats["prompt_tokens_estimated"] = int(stats.get("prompt_tokens_estimated", 0) or 0) + prompt_tokens
+            stats["completion_tokens_estimated"] = int(stats.get("completion_tokens_estimated", 0) or 0) + completion_tokens
+        self._debug_log("request_finished", {
+            "request": dict(self.current_request_debug_info),
+            "assistant_text": final_text,
+            "completion_tokens_estimated": completion_tokens,
+            "saved_code_paths": [str(path) for path in self.last_saved_code_paths],
+            "auto_read_assistant": bool(auto_read),
+        })
+        self.current_request_debug_info = {}
         if self.last_saved_code_paths:
             self.statusBar().showMessage(self.t("code_blocks_saved_status", "{count} Codeblock/Codeblöcke wurden zusätzlich im Unterordner generated_code gespeichert.").format(count=len(self.last_saved_code_paths)), 5000)
         else:
@@ -3005,6 +3284,7 @@ class MainWindow(QMainWindow):
         self.send_btn.setEnabled(True)
         retry_context = self.auto_answer_checkbox.isChecked() and not self.context_retry_in_progress and is_context_overflow_error(message)
         if retry_context and self.current_session is not None and self.current_session.messages and self.current_session.messages[-1].role == "assistant" and not (self.current_session.messages[-1].content or "").strip():
+            self._debug_log("request_failed_context_retry", {"error": message, "request": dict(self.current_request_debug_info)})
             self.current_session.messages.pop()
             if self.current_assistant_bubble is not None:
                 try:
@@ -3036,6 +3316,8 @@ class MainWindow(QMainWindow):
         if self.current_session and self.current_session.messages:
             self.current_session.messages[-1].content = f"Fehler bei der Ollama-Anfrage:\n\n{message}"
             self.store.save(self.current_session)
+        self._debug_log("request_failed", {"error": message, "request": dict(self.current_request_debug_info)})
+        self.current_request_debug_info = {}
         self.current_request_consumes_rollover_short_instruction = False
         self._set_request_feedback("failed")
         self._flush_chat_ui()
@@ -3571,6 +3853,7 @@ class MainWindow(QMainWindow):
 
             self.config = dialog.get_config()
             self.config, _ = resolve_tts_voice_config_defaults(self.config)
+            debug_log_created = self.debug_logger.set_enabled(bool(self.config.get("debug_trace_enabled", False)))
             save_config(self.config)
             self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
 
@@ -3626,10 +3909,14 @@ class MainWindow(QMainWindow):
                         self.statusBar().showMessage(self.t("audio_stopped", "Audio gestoppt."), 2500)
                     restarted_tts = True
 
+            self._debug_log("settings_saved", {"debug_log_created": bool(debug_log_created), "old_config": old_config, "new_config": self._debug_config_snapshot()})
             if not restarted_tts:
-                msg_key = "language_changed" if lang_changed else "settings_saved"
-                default_msg = "Sprache der Oberfläche geändert." if msg_key == "language_changed" else "Einstellungen gespeichert."
-                self.statusBar().showMessage(self.t(msg_key, default_msg), 2500)
+                if self.config.get("debug_trace_enabled", False):
+                    self.statusBar().showMessage(self.t("debug_trace_enabled_status", "Debug-Log aktiv: {path}").format(path=str(self.debug_logger.path)), 5000)
+                else:
+                    msg_key = "language_changed" if lang_changed else "settings_saved"
+                    default_msg = "Sprache der Oberfläche geändert." if msg_key == "language_changed" else "Einstellungen gespeichert."
+                    self.statusBar().showMessage(self.t(msg_key, default_msg), 2500)
 
     def show_tts_setup(self) -> None:
         dialog = TTSSetupDialog(self.config, self)

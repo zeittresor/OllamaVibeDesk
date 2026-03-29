@@ -19,6 +19,8 @@ AUDIO_DIR = APP_DATA_DIR / "audio"
 CACHE_DIR = APP_DATA_DIR / "cache"
 EXPORTS_DIR = APP_DATA_DIR / "exports"
 GENERATED_CODE_DIR = APP_DATA_DIR / "generated_code"
+DEBUG_LOG_DIR = APP_DATA_DIR / "debug_logs"
+SETTINGS_PROFILE_DIR = APP_DATA_DIR / "config_profiles"
 TTS_DIR = APP_DATA_DIR / "tts"
 LANG_DIR = APP_ROOT / "lang"
 SAPI_LEXICON_PATH = TTS_DIR / "sapi_lexicon.json"
@@ -52,13 +54,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "strip_emojis_for_tts": True,
     "chat_max_tokens": 512,
     "auto_answer_max_rounds": 0,
-    "context_message_limit": 40,
+    "context_message_limit": 8,
     "auto_answer_short_answers": True,
-    "auto_answer_eliza_share": 60,
-    "auto_answer_phrase_repeat_lookback": 3,
-    "rollover_carry_messages": 8,
+    "auto_answer_eliza_share": 30,
+    "auto_answer_phrase_repeat_lookback": 1,
+    "rollover_carry_messages": 5,
     "auto_answer_short_instruction_overrides": {},
     "tts_voice_defaults_initialized": False,
+    "debug_trace_enabled": False,
 }
 
 
@@ -295,6 +298,8 @@ def ensure_directories() -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
     GENERATED_CODE_DIR.mkdir(parents=True, exist_ok=True)
+    DEBUG_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     TTS_DIR.mkdir(parents=True, exist_ok=True)
     LANG_DIR.mkdir(parents=True, exist_ok=True)
     ensure_default_sapi_lexicon()
