@@ -1,6 +1,6 @@
 # OllamaVibeDesk
 
-Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **theme support**, **chat history**, **automatic chat**, **streaming responses**, and optional **local TTS playback/export** through a **VibeVoice compatible server**.
+Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **theme support**, **chat history**, **streaming responses**, and optional **local TTS playback/export** through a **VibeVoice-Realtime-0.5B compatible server**.
 
 
 ## Main features
@@ -15,15 +15,15 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - optional WAV export via a local TTS endpoint
 - Windows installer and launcher batch files
 - no cloud requirement for normal chat usage once local services are present
-- multiple interface language support (currently: DE/EN/ES/FR/HI/IT/JA/KO/NL/PL/PT/RU)
-- different voice output speakers for human and AI (as Sapi or VibeVoice Speakers)
-- automatic VibeVoice server setup included
+- multiple language support (currently: german, english, french, spanish, russian)
+- different voice output speakers for human and AI
 - auto answer function to act like the human based of the ELIZA algorythm to automaticly continue a chat dialog
-- Automatic Python code GUI program generation based on the current content of the conversation (using "auto-answer" mode) :-) * look at "cheats" section down below.
 
 ## Example with voice output (german language)
 
 <img width="1416" height="945" alt="grafik" src="https://github.com/user-attachments/assets/ec2a2fc3-176a-46d1-9edd-a8e971a1d764" />
+
+https://github.com/user-attachments/assets/4dbec30d-9411-43f4-a442-8d32712e9dcd
 
 https://github.com/user-attachments/assets/e954e451-ed6e-4a08-b72f-f3dca99c49dd
 
@@ -160,8 +160,3 @@ Unterstützt werden `word` (ganze Wörter) und `phrase` (ganze Wortfolgen).
 ## Source
 
 https://github.com/zeittresor/OllamaVibeDesk/
-
-## Cheats
-
-ex. you give to a LLM something to talk about (make sure you have selected your nativ language and set ELIZA to a relation of ~ 20% / 80%), in the main chat page select the checkbox at "Auto Answer (ELIZA), and click send. Now you unplug your internet connection, mute your speaker, go to bed. If everything is working correctly you might find some crazy new programs you could test in the output after your breakfast - just copy the selected code and rename it to [what ever name].py and start it). I got ~20 new programs in ~8 hours. (works great using dolphin3:latest model). Most is crap but sometimes it is unique / usefull / crazy funny stupid. :-)
-
