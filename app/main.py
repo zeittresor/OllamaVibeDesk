@@ -50,7 +50,7 @@ from PyQt6.QtWidgets import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, DEBUG_LOG_DIR, SETTINGS_PROFILE_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, DEFAULT_CONFIG, load_config, save_config, ensure_directories
+from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, DEBUG_LOG_DIR, SETTINGS_PROFILE_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, AUTO_ANSWER_QUESTION_REPLY_PATH, DEFAULT_CONFIG, load_config, save_config, ensure_directories
 from app.models import ChatMessage, ChatSession
 from app.ollama_client import OllamaClient
 from app.themes import THEMES
@@ -226,6 +226,14 @@ def load_auto_answer_data() -> dict:
         return {"enabled": True, "phrases": {"de": []}}
 
 
+def load_auto_answer_question_reply_data() -> dict:
+    ensure_directories()
+    try:
+        return json.loads(AUTO_ANSWER_QUESTION_REPLY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"enabled": True, "replies": {"de": []}}
+
+
 def default_role_names(language_code: str) -> tuple[str, str]:
     code = (language_code or "de").lower()
     mapping = {
@@ -242,6 +250,9 @@ TOKEN_PRESET_VALUES = [64, 128, 256, 512, 1024, 2048, 4096, 8192]
 AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
 AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 5
 AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
+APP_VERSION = "v1.0"
+APP_TITLE_BASE = f"OllamaVibeDesk {APP_VERSION}"
+APP_TITLE_DATE = datetime.now().strftime("%Y-%m-%d")
 AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
 
 
@@ -709,12 +720,27 @@ def _reflect_fragment_en(fragment: str) -> str:
     return out
 
 
+def _question_reply_candidates(question_reply_data: dict | None, language_code: str) -> list[str]:
+    code = (language_code or "de").lower()
+    if not isinstance(question_reply_data, dict):
+        return []
+    replies_map = question_reply_data.get("replies")
+    if not isinstance(replies_map, dict):
+        return []
+    replies = [str(x).strip() for x in replies_map.get(code, []) if str(x).strip()]
+    if not replies and code != "en":
+        replies = [str(x).strip() for x in replies_map.get("en", []) if str(x).strip()]
+    return replies
+
+
 def generate_auto_answer(
     source_text: str,
     language_code: str,
     phrase_data: dict | None = None,
+    question_reply_data: dict | None = None,
     recent_generated_user_messages: list[str] | None = None,
     eliza_share_percent: int = 60,
+    use_question_replies_for_all: bool = True,
 ) -> str:
     cleaned = markdown_to_tts_text(source_text or "")
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -783,7 +809,14 @@ def generate_auto_answer(
         ]
 
     blocked_recent = recent_generated_user_messages or []
-    phrase_candidates = _unique_auto_answer_phrases(_expand_auto_answer_phrase_templates(phrases, topic_words), blocked_recent)
+    question_reply_candidates = _question_reply_candidates(question_reply_data, code)
+    is_question = cleaned.rstrip().endswith("?")
+    if is_question and question_reply_candidates:
+        return random.choice(question_reply_candidates).strip()
+    phrase_pool = _expand_auto_answer_phrase_templates(phrases, topic_words)
+    if use_question_replies_for_all and question_reply_candidates:
+        phrase_pool.extend(question_reply_candidates)
+    phrase_candidates = _unique_auto_answer_phrases(phrase_pool, blocked_recent)
     eliza_candidates = [t for t in templates if t.strip()]
     eliza_share = max(0, min(100, int(eliza_share_percent or 0)))
 
@@ -1269,6 +1302,83 @@ class AutoAnswerPhrasesDialog(QDialog):
         self.accept()
 
 
+class AutoAnswerQuestionRepliesDialog(QDialog):
+    def __init__(self, language_code: str = "de", parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.translations = load_language_pack(language_code)
+        self.setWindowTitle(self.t("auto_answer_question_replies_editor_title", "Antwortliste für Fragen bearbeiten"))
+        self.setModal(True)
+        self.resize(760, 560)
+
+        layout = QVBoxLayout(self)
+        info = QLabel(self.t("auto_answer_question_replies_editor_info", "Die JSON-Datei wird direkt aus dem App-Ordner geladen. Unter 'replies' können pro Sprache kurze Reaktionen hinterlegt werden, die verwendet werden, wenn die LLM eine Frage stellt. Optional können diese Antworten auch zusätzlich im normalen Auto-Answer-Pool mitverwendet werden."))
+        info.setWordWrap(True)
+        info.setObjectName("SubtleLabel")
+        layout.addWidget(info)
+
+        self.editor = QPlainTextEdit()
+        self.editor.setPlaceholderText("""{
+  "enabled": true,
+  "replies": {
+    "de": ["Ja.", "Nein.", "Klingt gut."]
+  }
+}""")
+        layout.addWidget(self.editor, 1)
+
+        buttons = QHBoxLayout()
+        self.reset_btn = QPushButton(self.t("reset_default", "Standard wiederherstellen"))
+        self.reset_btn.clicked.connect(self.reset_to_default)
+        buttons.addWidget(self.reset_btn)
+        buttons.addStretch()
+
+        cancel_btn = QPushButton(self.t("cancel", "Abbrechen"))
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton(self.t("save", "Speichern"))
+        save_btn.setObjectName("AccentButton")
+        save_btn.clicked.connect(self.save_and_accept)
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(save_btn)
+        layout.addLayout(buttons)
+        self.load_current()
+
+    def t(self, key: str, default: Optional[str] = None) -> str:
+        return self.translations.get(key, default or key)
+
+    def load_current(self) -> None:
+        ensure_directories()
+        self.editor.setPlainText(AUTO_ANSWER_QUESTION_REPLY_PATH.read_text(encoding="utf-8"))
+
+    def reset_to_default(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            self.t("reset_confirm_title", "Standard wiederherstellen"),
+            self.t("reset_confirm_text", "Soll das Aussprache-Lexikon auf die Standardwerte zurückgesetzt werden?")
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if AUTO_ANSWER_QUESTION_REPLY_PATH.exists():
+            AUTO_ANSWER_QUESTION_REPLY_PATH.unlink()
+        ensure_directories()
+        self.load_current()
+
+    def save_and_accept(self) -> None:
+        raw = self.editor.toPlainText().strip()
+        if not raw:
+            QMessageBox.warning(self, self.t("empty_question_replies_title", "Leere Datei"), self.t("empty_question_replies_text", "Die JSON-Datei darf nicht leer sein."))
+            return
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            QMessageBox.critical(self, self.t("invalid_json_title", "Ungültiges JSON"), self.t("invalid_json_text", "Die Datei ist kein gültiges JSON.\n\n{error}").format(error=exc))
+            return
+        if not isinstance(data, dict):
+            QMessageBox.critical(self, self.t("invalid_format_title", "Ungültiges Format"), self.t("invalid_format_root", "Die oberste Ebene der Datei muss ein JSON-Objekt sein."))
+            return
+        ensure_directories()
+        AUTO_ANSWER_QUESTION_REPLY_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.accept()
+
+
 class AutoAnswerShortPromptDialog(QDialog):
     def __init__(self, config: dict, language_code: str = "de", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -1442,7 +1552,7 @@ class SettingsDialog(QDialog):
         self.content_layout.addWidget(self.auto_read_responses)
 
         self.auto_read_user_inputs = QCheckBox(self.t("auto_read_user_inputs_label", "Eigene manuell gesendete Texte nach dem Senden automatisch vorlesen"))
-        self.auto_read_user_inputs.setChecked(bool(self.config.get("auto_read_user_inputs", False)))
+        self.auto_read_user_inputs.setChecked(bool(self.config.get("auto_read_user_inputs", True)))
         self.auto_read_user_inputs.setToolTip(self.t("auto_read_user_inputs_tooltip", "Wenn aktiv, werden manuell eingegebene Benutzertexte direkt nach der Übergabe an das LLM automatisch vorgelesen."))
         self.content_layout.addWidget(self.auto_read_user_inputs)
 
@@ -1468,6 +1578,21 @@ class SettingsDialog(QDialog):
         self.edit_auto_answer_btn.clicked.connect(self.edit_auto_answer_phrases)
         auto_answer_row.addWidget(self.edit_auto_answer_btn)
         self.content_layout.addLayout(auto_answer_row)
+
+        question_replies_row = QHBoxLayout()
+        question_replies_info = QLabel(self.t("auto_answer_question_replies_settings_hint", "Bearbeite kurze Reaktionen für den Fall, dass die LLM eine Frage stellt."))
+        question_replies_info.setObjectName("SubtleLabel")
+        question_replies_info.setWordWrap(True)
+        question_replies_row.addWidget(question_replies_info, 1)
+        self.edit_auto_answer_question_replies_btn = QPushButton(self.t("edit_auto_answer_question_replies", "Antwortliste für Fragen bearbeiten …"))
+        self.edit_auto_answer_question_replies_btn.clicked.connect(self.edit_auto_answer_question_replies)
+        question_replies_row.addWidget(self.edit_auto_answer_question_replies_btn)
+        self.content_layout.addLayout(question_replies_row)
+
+        self.auto_answer_use_question_replies_for_all = QCheckBox(self.t("auto_answer_use_question_replies_for_all_label", "Frage-Antwort-Liste auch für normale Auto-Answer-Antworten mitverwenden"))
+        self.auto_answer_use_question_replies_for_all.setChecked(bool(self.config.get("auto_answer_use_question_replies_for_all", True)))
+        self.auto_answer_use_question_replies_for_all.setToolTip(self.t("auto_answer_use_question_replies_for_all_tooltip", "Wenn aktiv, dürfen die Antworten aus auto_answer_question_replies.json nicht nur bei Fragen, sondern zusätzlich auch im normalen Auto-Answer-Pool vorkommen. Bei echten Fragen wird diese Liste weiterhin bevorzugt verwendet."))
+        self.content_layout.addWidget(self.auto_answer_use_question_replies_for_all)
 
         lexicon_row = QHBoxLayout()
         self.tts_lexicon = QCheckBox(self.t("tts_lexicon_label", "TTS Aussprache-Lexikon verwenden"))
@@ -1512,7 +1637,7 @@ class SettingsDialog(QDialog):
         self.chat_max_tokens = QSpinBox()
         self.chat_max_tokens.setRange(TOKEN_PRESET_VALUES[0], TOKEN_PRESET_VALUES[-1])
         self.chat_max_tokens.setSingleStep(64)
-        self.chat_max_tokens.setValue(int(self.config.get("chat_max_tokens", 512) or 512))
+        self.chat_max_tokens.setValue(int(self.config.get("chat_max_tokens", 1024) or 1024))
         self.chat_max_tokens.setToolTip(self.t("chat_max_tokens_tooltip", "Begrenzt die maximale Antwortlänge des LLM. Kleinere Werte können lange Auto-Answer-Schleifen stabiler machen."))
         token_label_row.addWidget(self.chat_max_tokens)
         limits_layout.addLayout(token_label_row)
@@ -1577,7 +1702,7 @@ class SettingsDialog(QDialog):
         phrase_repeat_row.addWidget(QLabel(self.t("auto_answer_phrase_repeat_lookback_label", "Wie viele letzte Auto-Answer-Benutzertexte nicht wiederholt werden dürfen")), 1)
         self.auto_answer_phrase_repeat_lookback = QSpinBox()
         self.auto_answer_phrase_repeat_lookback.setRange(0, 50)
-        self.auto_answer_phrase_repeat_lookback.setValue(int(self.config.get("auto_answer_phrase_repeat_lookback", 1) or 1))
+        self.auto_answer_phrase_repeat_lookback.setValue(int(self.config.get("auto_answer_phrase_repeat_lookback", 4) or 4))
         self.auto_answer_phrase_repeat_lookback.setToolTip(self.t("auto_answer_phrase_repeat_lookback_tooltip", "Bei Standardsätzen werden die letzten automatisch erzeugten Benutzertexte berücksichtigt. Wenn nicht genug verschiedene Standardsätze übrig bleiben, wird automatisch ELIZA verwendet."))
         phrase_repeat_row.addWidget(self.auto_answer_phrase_repeat_lookback)
         limits_layout.addLayout(phrase_repeat_row)
@@ -1844,6 +1969,10 @@ class SettingsDialog(QDialog):
         dialog = AutoAnswerPhrasesDialog(self.current_settings_language_code(), self)
         dialog.exec()
 
+    def edit_auto_answer_question_replies(self) -> None:
+        dialog = AutoAnswerQuestionRepliesDialog(self.current_settings_language_code(), self)
+        dialog.exec()
+
     def current_settings_language_code(self) -> str:
         return (self.interface_language.currentData() or self.config.get("interface_language", "de") or "de").strip() or "de"
 
@@ -1891,13 +2020,14 @@ class SettingsDialog(QDialog):
 
         self.autoplay.setChecked(bool(merged.get("autoplay_tts", True)))
         self.auto_read_responses.setChecked(bool(merged.get("auto_read_assistant_responses", True)))
-        self.auto_read_user_inputs.setChecked(bool(merged.get("auto_read_user_inputs", False)))
+        self.auto_read_user_inputs.setChecked(bool(merged.get("auto_read_user_inputs", DEFAULT_CONFIG["auto_read_user_inputs"])))
         self.read_all_include_names.setChecked(bool(merged.get("read_all_include_names", False)))
         self.user_display_name.setText(str(merged.get("user_display_name", "") or ""))
         self.assistant_display_name.setText(str(merged.get("assistant_display_name", "") or ""))
         self.tts_lexicon.setChecked(bool(merged.get("tts_lexicon_enabled", True)))
         self.strip_emojis.setChecked(bool(merged.get("strip_emojis_for_tts", True)))
         self.auto_answer_short_answers.setChecked(bool(merged.get("auto_answer_short_answers", True)))
+        self.auto_answer_use_question_replies_for_all.setChecked(bool(merged.get("auto_answer_use_question_replies_for_all", True)))
         self.debug_trace_enabled.setChecked(bool(merged.get("debug_trace_enabled", False)))
         self.chat_max_tokens.setValue(int(merged.get("chat_max_tokens", DEFAULT_CONFIG["chat_max_tokens"]) or DEFAULT_CONFIG["chat_max_tokens"]))
         self.auto_answer_rounds.setValue(int(merged.get("auto_answer_max_rounds", DEFAULT_CONFIG["auto_answer_max_rounds"]) or DEFAULT_CONFIG["auto_answer_max_rounds"]))
@@ -1906,7 +2036,7 @@ class SettingsDialog(QDialog):
         self.context_limit.setValue(int(merged.get("context_message_limit", DEFAULT_CONFIG["context_message_limit"]) or DEFAULT_CONFIG["context_message_limit"]))
         self.rollover_carry_messages.setValue(int(merged.get("rollover_carry_messages", DEFAULT_CONFIG["rollover_carry_messages"]) or DEFAULT_CONFIG["rollover_carry_messages"]))
         self.sapi_rate_slider.setValue(int(merged.get("windows_sapi_rate", 0) or 0))
-        self.sapi_pitch_slider.setValue(int(merged.get("windows_sapi_pitch", 0) or 0))
+        self.sapi_pitch_slider.setValue(int(merged.get("windows_sapi_pitch", DEFAULT_CONFIG["windows_sapi_pitch"]) or DEFAULT_CONFIG["windows_sapi_pitch"]))
         self.sapi_volume_slider.setValue(int(merged.get("windows_sapi_volume", 100) or 100))
         self.system_prompt.setPlainText(str(merged.get("system_prompt", "") or ""))
 
@@ -1983,6 +2113,7 @@ class SettingsDialog(QDialog):
         data["windows_sapi_lexicon_enabled"] = data["tts_lexicon_enabled"]
         data["strip_emojis_for_tts"] = self.strip_emojis.isChecked()
         data["auto_answer_short_answers"] = self.auto_answer_short_answers.isChecked()
+        data["auto_answer_use_question_replies_for_all"] = self.auto_answer_use_question_replies_for_all.isChecked()
         data["debug_trace_enabled"] = self.debug_trace_enabled.isChecked()
         data["chat_max_tokens"] = int(self.chat_max_tokens.value())
         data["auto_answer_max_rounds"] = int(self.auto_answer_rounds.value())
@@ -2316,7 +2447,7 @@ class MainWindow(QMainWindow):
         self.debug_session_totals: dict[str, dict[str, int]] = {}
         self.current_request_debug_info: dict = {}
 
-        self.setWindowTitle(self.t("app_title", "OllamaVibeDesk"))
+        self.setWindowTitle(self._window_title_text())
         self.audio_error_signal.connect(self._on_audio_error)
         self.audio_status_signal.connect(self._on_audio_status)
         self.audio_feedback_signal.connect(self._on_audio_feedback)
@@ -2376,6 +2507,9 @@ class MainWindow(QMainWindow):
     def t(self, key: str, default: Optional[str] = None) -> str:
         return self.translations.get(key, default or key)
 
+    def _window_title_text(self) -> str:
+        return f"{self.t('app_title', APP_TITLE_BASE)} - {APP_TITLE_DATE}"
+
     def reload_language_pack(self) -> None:
         self.translations = load_language_pack(self.config.get("interface_language", "de"))
     def _debug_config_snapshot(self) -> dict:
@@ -2383,12 +2517,12 @@ class MainWindow(QMainWindow):
             "interface_language": self.config.get("interface_language", "de"),
             "theme": self.config.get("theme", "Midnight"),
             "model": self.model_combo.currentText().strip() if hasattr(self, "model_combo") else self.config.get("last_model", ""),
-            "auto_answer_enabled": bool(self.config.get("auto_answer_enabled", False)),
+            "auto_answer_enabled": bool(self.config.get("auto_answer_enabled", True)),
             "auto_answer_short_answers": bool(self.config.get("auto_answer_short_answers", True)),
             "auto_answer_eliza_share": int(self.config.get("auto_answer_eliza_share", 30) or 30),
-            "auto_answer_phrase_repeat_lookback": int(self.config.get("auto_answer_phrase_repeat_lookback", 1) or 1),
+            "auto_answer_phrase_repeat_lookback": int(self.config.get("auto_answer_phrase_repeat_lookback", 4) or 4),
             "auto_answer_max_rounds": int(self.config.get("auto_answer_max_rounds", 0) or 0),
-            "chat_max_tokens": int(self.config.get("chat_max_tokens", 512) or 512),
+            "chat_max_tokens": int(self.config.get("chat_max_tokens", 1024) or 1024),
             "context_message_limit": int(self.config.get("context_message_limit", 8) or 8),
             "rollover_carry_messages": int(self.config.get("rollover_carry_messages", AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES) or AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES),
             "tts_backend": self.config.get("tts_backend", "disabled"),
@@ -2456,7 +2590,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        self.sidebar_title = QLabel(self.t("app_title", "OllamaVibeDesk"))
+        self.sidebar_title = QLabel(self.t("app_title", APP_TITLE_BASE))
         self.sidebar_title.setObjectName("TitleLabel")
         layout.addWidget(self.sidebar_title)
 
@@ -2610,7 +2744,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.tts_feedback_frame)
 
         self.auto_answer_checkbox = QCheckBox(self.t("auto_answer_checkbox", "Auto Answer (ELIZA)"))
-        self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
+        self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", True)))
         self.auto_answer_checkbox.toggled.connect(self._on_auto_answer_toggled)
         layout.addWidget(self.auto_answer_checkbox)
 
@@ -2635,8 +2769,8 @@ class MainWindow(QMainWindow):
         return frame
 
     def refresh_ui_texts(self) -> None:
-        self.setWindowTitle(self.t("app_title", "OllamaVibeDesk"))
-        self.sidebar_title.setText(self.t("app_title", "OllamaVibeDesk"))
+        self.setWindowTitle(self._window_title_text())
+        self.sidebar_title.setText(self.t("app_title", APP_TITLE_BASE))
         self.sidebar_subtitle.setText(self.t("sidebar_subtitle", "Lokale Chats · portable Daten · optionale WAV-Ausgabe"))
         self.new_chat_btn.setText(self.t("new_chat", "Neuer Chat"))
         self.delete_chat_btn.setText(self.t("delete_chat_button", "Löschen"))
@@ -2893,7 +3027,7 @@ class MainWindow(QMainWindow):
     def _auto_answer_recent_generated_user_messages(self) -> list[str]:
         if not self.current_session:
             return []
-        lookback = max(0, int(self.config.get("auto_answer_phrase_repeat_lookback", 1) or 0))
+        lookback = max(0, int(self.config.get("auto_answer_phrase_repeat_lookback", 4) or 0))
         if lookback <= 0:
             return []
         items = [
@@ -2912,11 +3046,11 @@ class MainWindow(QMainWindow):
         return max(2, configured)
 
     def _request_token_budget(self) -> int:
-        max_tokens = max(1, int(self.config.get("chat_max_tokens", 512) or 512))
+        max_tokens = max(1, int(self.config.get("chat_max_tokens", 1024) or 1024))
         return max(AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET, max_tokens * AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR)
 
     def _would_exceed_request_budget(self, messages: list[dict], system_prompt: str) -> bool:
-        projected = estimate_chat_payload_tokens(messages, system_prompt) + max(0, int(self.config.get("chat_max_tokens", 512) or 512))
+        projected = estimate_chat_payload_tokens(messages, system_prompt) + max(0, int(self.config.get("chat_max_tokens", 1024) or 1024))
         return projected > self._request_token_budget()
 
     def _clone_message_for_rollover(self, msg: ChatMessage) -> ChatMessage:
@@ -3125,8 +3259,8 @@ class MainWindow(QMainWindow):
             "messages": messages,
             "system_prompt": system_prompt,
             "request_prompt_tokens_estimated": request_prompt_tokens,
-            "response_max_tokens": int(self.config.get("chat_max_tokens", 512) or 512),
-            "request_total_budget_estimated": request_prompt_tokens + int(self.config.get("chat_max_tokens", 512) or 512),
+            "response_max_tokens": int(self.config.get("chat_max_tokens", 1024) or 1024),
+            "request_total_budget_estimated": request_prompt_tokens + int(self.config.get("chat_max_tokens", 1024) or 1024),
         }
         self.current_request_consumes_rollover_short_instruction = False
         self._debug_log("request_prepared", {"request": dict(self.current_request_debug_info)})
@@ -3159,14 +3293,17 @@ class MainWindow(QMainWindow):
         if self.input_box.toPlainText().strip():
             return
         phrase_data = load_auto_answer_data()
+        question_reply_data = load_auto_answer_question_reply_data()
         if isinstance(phrase_data, dict) and phrase_data.get("enabled", True) is False:
             return
         auto_text = generate_auto_answer(
             self.pending_auto_answer_source,
             self.config.get("interface_language", "de"),
             phrase_data,
+            question_reply_data,
             recent_generated_user_messages=self._auto_answer_recent_generated_user_messages(),
             eliza_share_percent=int(self.config.get("auto_answer_eliza_share", 30) or 30),
+            use_question_replies_for_all=bool(self.config.get("auto_answer_use_question_replies_for_all", True)),
         )
         if not auto_text:
             return
@@ -3209,7 +3346,7 @@ class MainWindow(QMainWindow):
             model_name=self.model_combo.currentText().strip(),
             messages=messages,
             system_prompt=system_prompt,
-            max_tokens=int(self.config.get("chat_max_tokens", 512) or 512),
+            max_tokens=int(self.config.get("chat_max_tokens", 1024) or 1024),
         )
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.started.connect(self.worker.run)
@@ -3413,7 +3550,7 @@ class MainWindow(QMainWindow):
             model=self.config.get("tts_model", "tts-1-hd"),
             audio_format='wav',
             windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-            windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
+            windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 3)),
             windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
             windows_sapi_language=self.current_sapi_language_tag(),
         )
@@ -3494,7 +3631,7 @@ class MainWindow(QMainWindow):
                         model=self.config.get("tts_model", "tts-1-hd"),
                         audio_format='wav',
                         windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
+                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 3)),
                         windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
                         windows_sapi_language=self.current_sapi_language_tag(),
                     )
@@ -3592,7 +3729,7 @@ class MainWindow(QMainWindow):
                         model=self.config.get("tts_model", "tts-1-hd"),
                         audio_format='wav',
                         windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
+                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 3)),
                         windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
                         windows_sapi_language=self.current_sapi_language_tag(),
                     )
@@ -3855,7 +3992,7 @@ class MainWindow(QMainWindow):
             self.config, _ = resolve_tts_voice_config_defaults(self.config)
             debug_log_created = self.debug_logger.set_enabled(bool(self.config.get("debug_trace_enabled", False)))
             save_config(self.config)
-            self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
+            self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", True)))
 
             lang_changed = old_lang != self.config.get("interface_language", "de")
             theme_changed = old_theme != self.config.get("theme", "Midnight")

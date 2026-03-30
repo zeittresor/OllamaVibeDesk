@@ -25,6 +25,7 @@ TTS_DIR = APP_DATA_DIR / "tts"
 LANG_DIR = APP_ROOT / "lang"
 SAPI_LEXICON_PATH = TTS_DIR / "sapi_lexicon.json"
 AUTO_ANSWER_PATH = APP_DATA_DIR / "auto_answer_phrases.json"
+AUTO_ANSWER_QUESTION_REPLY_PATH = APP_DATA_DIR / "auto_answer_question_replies.json"
 CONFIG_PATH = APP_DATA_DIR / "config.json"
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -36,32 +37,33 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "tts_format": "wav",
     "autoplay_tts": True,
     "auto_read_assistant_responses": True,
-    "auto_read_user_inputs": False,
+    "auto_read_user_inputs": True,
     "tts_lexicon_enabled": True,
     "windows_sapi_lexicon_enabled": True,
     "tts_user_voice": "",
     "windows_sapi_rate": 0,
-    "windows_sapi_pitch": 0,
+    "windows_sapi_pitch": 3,
     "windows_sapi_volume": 100,
     "interface_language": "de",
     "theme": "Midnight",
     "last_model": "",
     "system_prompt": "",
-    "auto_answer_enabled": False,
+    "auto_answer_enabled": True,
     "read_all_include_names": False,
     "user_display_name": "",
     "assistant_display_name": "",
     "strip_emojis_for_tts": True,
-    "chat_max_tokens": 512,
+    "chat_max_tokens": 1024,
     "auto_answer_max_rounds": 0,
     "context_message_limit": 8,
     "auto_answer_short_answers": True,
     "auto_answer_eliza_share": 30,
-    "auto_answer_phrase_repeat_lookback": 1,
+    "auto_answer_phrase_repeat_lookback": 4,
     "rollover_carry_messages": 5,
     "auto_answer_short_instruction_overrides": {},
     "tts_voice_defaults_initialized": False,
     "debug_trace_enabled": False,
+    "auto_answer_use_question_replies_for_all": True,
 }
 
 
@@ -291,6 +293,123 @@ def ensure_default_auto_answer_phrases() -> None:
         encoding="utf-8",
     )
 
+
+
+def ensure_default_auto_answer_question_replies() -> None:
+    default_data = {
+        "enabled": True,
+        "replies": {
+            "de": [
+                "Ja, bitte lass uns das tun.", "Ja, unbedingt.", "Das klingt gut.", "Find ich jetzt so mittelmäßig.",
+                "Find ich verrückt aber wenn du meinst.", "Nicht unbedingt.", "Ausbaubar - definitiv ausbaubar.",
+                "Hervorragend", "Super", "Nicht so toll.", "Weniger gut.", "Nein", "Ja", "Mehr davon bitte",
+                "Komplexer bitte", "Genial", "Etwas langweilig.", "Nicht so meins.", "Bitte nicht so.",
+                "Optimal.", "Seltsam.", "Skurril.", "Brauchbar.", "Irrational."
+            ],
+            "en": [
+                "Yes, let's do that.", "Yes, absolutely.", "That sounds good.", "I find that kind of mediocre.",
+                "Sounds crazy but if you insist.", "Not necessarily.", "Expandable - definitely expandable.",
+                "Excellent.", "Great.", "Not so good.", "Less good.", "No.", "Yes.", "More of that, please.",
+                "More complex, please.", "Brilliant.", "A bit boring.", "Not really my thing.", "Please not like that.",
+                "Optimal.", "Strange.", "Bizarre.", "Usable.", "Irrational."
+            ],
+            "fr": [
+                "Oui, faisons cela.", "Oui, absolument.", "Ça semble bien.", "Je trouve ça plutôt moyen.",
+                "Je trouve ça fou mais si tu veux.", "Pas forcément.", "Améliorable - clairement améliorable.",
+                "Excellent.", "Super.", "Pas terrible.", "Moins bien.", "Non.", "Oui.", "Encore plus de ça, s'il te plaît.",
+                "Plus complexe, s'il te plaît.", "Génial.", "Un peu ennuyeux.", "Ce n'est pas trop mon truc.", "Pas comme ça, s'il te plaît.",
+                "Optimal.", "Étrange.", "Surréaliste.", "Utilisable.", "Irrationnel."
+            ],
+            "es": [
+                "Sí, hagámoslo.", "Sí, sin duda.", "Eso suena bien.", "Me parece algo regular.",
+                "Me parece una locura, pero si tú quieres.", "No necesariamente.", "Mejorable, definitivamente mejorable.",
+                "Excelente.", "Genial.", "No tan bien.", "Menos bien.", "No.", "Sí.", "Más de eso, por favor.",
+                "Más complejo, por favor.", "Brillante.", "Un poco aburrido.", "No es mucho lo mío.", "Así no, por favor.",
+                "Óptimo.", "Extraño.", "Estrafalario.", "Útil.", "Irracional."
+            ],
+            "ru": [
+                "Да, давай это сделаем.", "Да, обязательно.", "Звучит хорошо.", "По-моему, так себе.",
+                "Звучит безумно, но если ты так считаешь.", "Не обязательно.", "Можно доработать — определённо можно доработать.",
+                "Отлично.", "Супер.", "Не очень.", "Слабовато.", "Нет.", "Да.", "Этого побольше, пожалуйста.",
+                "Сделай сложнее, пожалуйста.", "Гениально.", "Немного скучновато.", "Не совсем моё.", "Пожалуйста, не так.",
+                "Оптимально.", "Странно.", "Причудливо.", "Сносно.", "Иррационально."
+            ],
+            "it": [
+                "Sì, facciamolo.", "Sì, assolutamente.", "Suona bene.", "Lo trovo così così.",
+                "Mi sembra folle ma se lo dici tu.", "Non necessariamente.", "Migliorabile - decisamente migliorabile.",
+                "Eccellente.", "Super.", "Non tanto bene.", "Meno bene.", "No.", "Sì.", "Più di questo, per favore.",
+                "Più complesso, per favore.", "Geniale.", "Un po' noioso.", "Non fa molto per me.", "Per favore non così.",
+                "Ottimale.", "Strano.", "Bizzarro.", "Utilizzabile.", "Irrazionale."
+            ],
+            "pt": [
+                "Sim, vamos fazer isso.", "Sim, com certeza.", "Isso soa bem.", "Acho isso meio mediano.",
+                "Acho isso louco, mas se você quiser.", "Não necessariamente.", "Dá para melhorar — definitivamente dá para melhorar.",
+                "Excelente.", "Ótimo.", "Não tão bom.", "Menos bom.", "Não.", "Sim.", "Mais disso, por favor.",
+                "Mais complexo, por favor.", "Genial.", "Um pouco entediante.", "Não é muito a minha praia.", "Por favor, assim não.",
+                "Ótimo.", "Estranho.", "Excêntrico.", "Útil.", "Irracional."
+            ],
+            "nl": [
+                "Ja, laten we dat doen.", "Ja, absoluut.", "Dat klinkt goed.", "Dat vind ik maar middelmatig.",
+                "Dat vind ik gek, maar als jij het zegt.", "Niet per se.", "Uitbouwbaar - zeker uitbouwbaar.",
+                "Uitstekend.", "Super.", "Niet zo goed.", "Minder goed.", "Nee.", "Ja.", "Meer daarvan graag.",
+                "Complexer graag.", "Geniaal.", "Een beetje saai.", "Niet echt mijn ding.", "Alsjeblieft niet zo.",
+                "Optimaal.", "Vreemd.", "Bizar.", "Bruikbaar.", "Irrationeel."
+            ],
+            "pl": [
+                "Tak, zróbmy to.", "Tak, koniecznie.", "Brzmi dobrze.", "Uważam to za takie sobie.",
+                "Wydaje mi się to szalone, ale skoro tak uważasz.", "Niekoniecznie.", "Da się rozbudować — zdecydowanie da się rozbudować.",
+                "Znakomicie.", "Super.", "Nie za dobrze.", "Słabiej.", "Nie.", "Tak.", "Więcej tego, proszę.",
+                "Bardziej złożone, proszę.", "Genialne.", "Trochę nudne.", "To nie do końca moje klimaty.", "Proszę, nie tak.",
+                "Optymalnie.", "Dziwne.", "Kuriozalne.", "Użyteczne.", "Irracjonalne."
+            ],
+            "hi": [
+                "हाँ, चलो यह करते हैं।", "हाँ, बिल्कुल।", "यह अच्छा लगता है।", "मुझे यह बस ठीक-ठाक लगता है।",
+                "यह मुझे पागलपन लगता है, लेकिन अगर तुम ऐसा कहते हो।", "ज़रूरी नहीं।", "इसे और बढ़ाया जा सकता है — निश्चित रूप से बढ़ाया जा सकता है।",
+                "उत्कृष्ट।", "बहुत बढ़िया।", "इतना अच्छा नहीं।", "कम अच्छा।", "नहीं।", "हाँ।", "इसका और चाहिए।",
+                "कृपया इसे और जटिल बनाओ।", "जीनियस।", "थोड़ा उबाऊ।", "यह ज़्यादा मेरा नहीं है।", "कृपया ऐसा नहीं।",
+                "उत्तम।", "अजीब।", "विचित्र।", "कामचलाऊ।", "अतार्किक।"
+            ],
+            "ja": [
+                "はい、それをやりましょう。", "はい、ぜひ。", "それはよさそうです。", "今ひとつな感じです。",
+                "変だとは思いますが、あなたがそう言うなら。", "必ずしもそうではありません。", "発展の余地あり — 間違いなく発展の余地ありです。",
+                "素晴らしい。", "最高。", "あまりよくない。", "いまひとつ。", "いいえ。", "はい。", "もっとそれを。",
+                "もっと複雑にしてください。", "天才的。", "少し退屈です。", "あまり自分向きではないです。", "そういうのはやめてください。",
+                "最適。", "奇妙。", "風変わり。", "使える。", "不合理。"
+            ],
+            "ko": [
+                "네, 그렇게 합시다.", "네, 꼭요.", "좋게 들립니다.", "그건 좀 애매하네요.",
+                "좀 미친 것 같지만 당신이 원한다면요.", "꼭 그렇지는 않아요.", "더 발전시킬 수 있어요 — 확실히 발전시킬 수 있어요.",
+                "훌륭합니다.", "좋아요.", "그다지 좋지 않아요.", "덜 좋아요.", "아니요.", "네.", "그런 건 더 주세요.",
+                "더 복잡하게 부탁해요.", "천재적이네요.", "조금 지루해요.", "그다지 제 취향은 아니에요.", "그렇게는 하지 말아 주세요.",
+                "최적입니다.", "이상하네요.", "기묘하네요.", "쓸 만해요.", "비합리적이네요."
+            ]
+        }
+    }
+    if AUTO_ANSWER_QUESTION_REPLY_PATH.exists():
+        try:
+            existing = json.loads(AUTO_ANSWER_QUESTION_REPLY_PATH.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                replies = existing.setdefault("replies", {})
+                defaults = default_data.get("replies", {})
+                if isinstance(replies, dict):
+                    for code, items in defaults.items():
+                        current = replies.setdefault(code, [])
+                        if isinstance(current, list):
+                            seen = {str(x).strip() for x in current if str(x).strip()}
+                            for item in items:
+                                cleaned = str(item).strip()
+                                if cleaned and cleaned not in seen:
+                                    current.append(cleaned)
+                                    seen.add(cleaned)
+                for key, value in default_data.items():
+                    if key not in existing:
+                        existing[key] = value
+                AUTO_ANSWER_QUESTION_REPLY_PATH.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+                return
+        except Exception:
+            pass
+    AUTO_ANSWER_QUESTION_REPLY_PATH.write_text(json.dumps(default_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
 def ensure_directories() -> None:
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     CHATS_DIR.mkdir(parents=True, exist_ok=True)
@@ -304,6 +423,7 @@ def ensure_directories() -> None:
     LANG_DIR.mkdir(parents=True, exist_ok=True)
     ensure_default_sapi_lexicon()
     ensure_default_auto_answer_phrases()
+    ensure_default_auto_answer_question_replies()
 
 
 def load_config() -> Dict[str, Any]:
