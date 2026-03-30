@@ -1,6 +1,6 @@
 {
   "language_name": "Português",
-  "app_title": "OllamaVibeDesk",
+  "app_title": "OllamaVibeDesk v1.0",
   "sidebar_subtitle": "Local chats · portable data · optional WAV output",
   "new_chat": "Novo chat",
   "delete_chat_button": "Delete",
@@ -277,5 +277,13 @@
   "load_settings_profile_invalid_text": "O arquivo não contém um objeto JSON com configurações.",
   "load_settings_profile_done_title": "Configuração carregada",
   "load_settings_profile_done_text": "A configuração foi carregada para a janela. Ela ficará ativa após clicar em Salvar.\n{path}",
-  "json_files_filter": "Arquivos JSON (*.json);;Todos os arquivos (*)"
+  "json_files_filter": "Arquivos JSON (*.json);;Todos os arquivos (*)",
+  "edit_auto_answer_question_replies": "Edit question reply list …",
+  "auto_answer_question_replies_settings_hint": "Edit short reactions for cases where the LLM asks a question.",
+  "auto_answer_question_replies_editor_title": "Edit reply list for questions",
+  "auto_answer_question_replies_editor_info": "The JSON file is loaded directly from the app folder. Under “replies” you can store short reactions per language that are used when the LLM asks a question. Optionally, these replies can also be included in the normal auto-answer pool.",
+  "auto_answer_use_question_replies_for_all_label": "Also allow question-reply list in normal auto-answer replies",
+  "auto_answer_use_question_replies_for_all_tooltip": "When enabled, answers from auto_answer_question_replies.json may appear not only for questions but also in the normal auto-answer pool. For actual questions this list is still preferred.",
+  "empty_question_replies_title": "Empty file",
+  "empty_question_replies_text": "The JSON file must not be empty."
 }
