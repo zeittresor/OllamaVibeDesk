@@ -18,7 +18,7 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - multiple language support (currently: german, english, french, spanish, russian)
 - different voice output speakers for human and AI
 - auto answer function to act like the human based of the ELIZA algorythm to automaticly continue a chat dialog
-- automatic code generation based upon the dialogs in the auto-answer mode (Python, c#, php) (in subfolder ..\app_data\generated_code)
+- automatic code generating based upon the dialogs in the auto-answer mode (Python, c#, php) (in subfolder ..\app_data\generated_code)
 
 ## Example with voice output (german language)
 
