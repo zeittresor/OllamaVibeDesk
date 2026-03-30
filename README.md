@@ -19,6 +19,7 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - different voice output speakers for human and AI
 - auto answer function to act like the human based of the ELIZA algorythm to automaticly continue a chat dialog
 - automatic code generating based upon the dialogs in the auto-answer mode (Python, c#, php) (in subfolder ..\app_data\generated_code)
+- works 100 % offline after installation - you can pull the plug and select a matrix like theme :-)
 
 ## Example with voice output (german language)
 
