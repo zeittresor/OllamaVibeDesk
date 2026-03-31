@@ -61,7 +61,7 @@ Note: Make sure to start the VibeVoice Server after the installation.
 
 The Full installation including vibevoice is taking ~ 3 GB in total (just wait the setup to complete the installation procedure). Note using vibevoice it might take MUCH longer to generate a single Answer / question in VibeVoice quality because the full answer will be sent to the model to render a wave file of it first to get more human like context language. (i have tested this using different systems, it also work using a gen3 (yes, i really mean a intel Gen 3 CPU from 2012) intel i5 / nvidia rtx 4xxx)). You can diable the network connection now if you like and have fun listen to it.
 
-Note: Even if the auto-answer mode is active you can send a prompt of your own to the current dialog, it will be used as the next prompt after the current and the ELIZA / Random Answer mode continue to work after that. Btw. if a dialog is getting too long the App will automaticly switch to a new chat but it will take some dialogs from the previous chat to new one the hold the context straight in flow (there are many options in the settings to modify the behave).
+Note: Even if the auto-answer mode is active you can send a prompt of your own to the current dialog, it will be used as the next prompt after the current and the ELIZA / Random Answer mode continue to work after that. Btw. if a dialog is getting too long the App will automaticly switch to a new chat but it will take some dialogs from the previous chat to new one that holds the context straight in flow (there are many options in the settings to modify the behave).
 
 ## Requirements
 
