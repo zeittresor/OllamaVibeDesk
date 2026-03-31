@@ -23,9 +23,9 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 
 ## Example with voice output (german language)
 
-<img width="1416" height="945" alt="grafik" src="https://github.com/user-attachments/assets/ec2a2fc3-176a-46d1-9edd-a8e971a1d764" />
+<img width="1417" height="981" alt="v1_1" src="https://github.com/user-attachments/assets/cfa3352b-32a7-498f-a469-3484992c5ee1" />
 
-https://github.com/user-attachments/assets/4dbec30d-9411-43f4-a442-8d32712e9dcd
+Voice output example (VibeVoice Mode):
 
 https://github.com/user-attachments/assets/e954e451-ed6e-4a08-b72f-f3dca99c49dd
 
