@@ -31,14 +31,6 @@ https://github.com/user-attachments/assets/e954e451-ed6e-4a08-b72f-f3dca99c49dd
 
 Note: Using VibeVoice Mode takes some time to generate a voice output in contrast to the use of the default Windows Sapi.
 
-## Folder layout
-
-- `install_windows.bat` – creates a local virtual environment and installs Python packages for the GUI
-- `run_windows.bat` – starts the GUI from the local venv
-- `requirements.txt` – Python requirements for the GUI
-- `app/` – application source
-- `app_data/` – created on first run; contains config, chats, audio, cache, optional TTS helper data
-
 ## Basic usage instructions / Notes
 
 Make sure you have installed the requirements (Ollama, Python 3.13 (also works using 3.12.9), might be PIP if you dont have it already, GIT).
@@ -69,6 +61,14 @@ Note: Even if the auto-answer mode is active you can send a prompt of your own t
 - Python 3.10+ for the GUI
 - A running local Ollama instance
 - One or more Ollama models already pulled locally
+
+## Folder layout
+
+- `install_windows.bat` – creates a local virtual environment and installs Python packages for the GUI
+- `run_windows.bat` – starts the GUI from the local venv
+- `requirements.txt` – Python requirements for the GUI
+- `app/` – application source
+- `app_data/` – created on first run; contains config, chats, audio, cache, optional TTS helper data
 
 ## Install
 
