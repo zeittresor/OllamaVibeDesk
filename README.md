@@ -21,7 +21,7 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - automatic code generating based upon the dialogs in the auto-answer mode (Python, c#, php) (in subfolder ..\app_data\generated_code)
 - works 100 % offline after installation - you can pull the plug and select a matrix like theme :-)
 
-## Example with voice output (german language)
+## Example with SaPi output (german language)
 
 <img width="1417" height="981" alt="v1_1" src="https://github.com/user-attachments/assets/cfa3352b-32a7-498f-a469-3484992c5ee1" />
 
