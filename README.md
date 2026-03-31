@@ -39,6 +39,26 @@ Note: Using VibeVoice Mode takes some time to generate a voice output in contras
 - `app/` – application source
 - `app_data/` – created on first run; contains config, chats, audio, cache, optional TTS helper data
 
+## Basic usage instructions / Notes
+
+Make sure you have installed the requirements (Ollama, Python 3.13 (also works using 3.12.9), might be PIP if you dont have it already, GIT).
+
+Start Ollama (!) and close / minimize the GUI, make sure you have at least one model to use if you dont have any get a model using the ollama gui, suggestion: Dolphin3 or Qwen3.5:9b
+
+Extract the archive (or clone the repository) to a new folder ex. c:\AI\OllamaVibeDesk and start the install_windows.bat it will install all the required files (for the base setup). 
+
+If you dont break it it should start the GUI automaticly after installation (in the other case start the GUI using run_windows.bat)
+
+If you a from germany and want native german language you dont have to do anything for a first test, just go to the prompt field and enter something like "Erklär mir Mandelbrot Grafiken." then press send (or ctrl/strg + enter) and listen to the endless automatic dialog.
+
+If you are from a different country or want a different language go to settings (einstellungen) and select language (sprache) to select it. (save the config after that). Now back in the Main window enter something in the prompt box like "How old is the Towerwatch in London."
+
+How ever that all is just the base version (takes ~ 240 mb at all) but if you want to use MS Vibevoice change the speaker mode in settings and change it from TTS/SaPi to Vibevoice.
+
+The App is including a VibeVoice Server and is able to get all the requirements including optional voice models for different languages (male/female) in a simple oneclick build-in installer (VibeVoice setup). Make sure to start the VibeVoice Server after the installation.
+
+The Full installation including vibevoice is taking ~ 3 GB in total (just wait the setup to complete the installation procedure). Note using vibevoice it might take MUCH longer to generate a single Answer / question in VibeVoice quality because the full answer will be sent to the model to render a wave file of it first to get more human like context language. (i have tested this using different systems, it also work using a gen3 (yes, i really mean a intel Gen 3 CPU from 2012) intel i5 / nvidia rtx 4xxx)). Have fun.
+
 ## Requirements
 
 - Windows 10/11
