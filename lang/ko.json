@@ -1,6 +1,6 @@
 {
   "language_name": "한국어",
-  "app_title": "OllamaVibeDesk v1.0",
+  "app_title": "OllamaVibeDesk v1.8",
   "sidebar_subtitle": "Local chats · portable data · optional WAV output",
   "new_chat": "새 채팅",
   "delete_chat_button": "Delete",
@@ -278,6 +278,8 @@
   "load_settings_profile_done_title": "구성을 불러왔습니다",
   "load_settings_profile_done_text": "구성이 대화상자에 적용되었습니다. 저장을 누르면 활성화됩니다.\n{path}",
   "json_files_filter": "JSON 파일 (*.json);;모든 파일 (*)",
+  "auto_thinking_for_code_requests_label": "코드를 만들어야 할 때 자동으로 Thinking 모드로 전환",
+  "auto_thinking_for_code_requests_tooltip": "활성화하면 호환 모델이 감지된 코드 요청에서 자동으로 Thinking을 사용하고, 프롬프트가 추가로 코드를 실제 fenced Markdown 코드 블록으로 출력하라고 강하게 지시합니다.",
   "edit_auto_answer_question_replies": "Edit question reply list …",
   "auto_answer_question_replies_settings_hint": "Edit short reactions for cases where the LLM asks a question.",
   "auto_answer_question_replies_editor_title": "Edit reply list for questions",
@@ -285,5 +287,8 @@
   "auto_answer_use_question_replies_for_all_label": "Also allow question-reply list in normal auto-answer replies",
   "auto_answer_use_question_replies_for_all_tooltip": "When enabled, answers from auto_answer_question_replies.json may appear not only for questions but also in the normal auto-answer pool. For actual questions this list is still preferred.",
   "empty_question_replies_title": "Empty file",
-  "empty_question_replies_text": "The JSON file must not be empty."
+  "empty_question_replies_text": "The JSON file must not be empty.",
+  "allow_consecutive_auto_answer_dataset_reuse_label": "Allow consecutive duplicate references",
+  "allow_consecutive_auto_answer_dataset_reuse_tooltip": "When disabled, direct repeats of the same entries from auto_answer_phrases.json or auto_answer_question_replies.json are avoided in the next auto-answer turn whenever possible.",
+  "auto_answer_timer_failed": "Auto-answer was stopped due to an internal error."
 }

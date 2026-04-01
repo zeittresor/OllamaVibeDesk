@@ -1,6 +1,6 @@
 {
   "language_name": "Deutsch",
-  "app_title": "OllamaVibeDesk v1.0",
+  "app_title": "OllamaVibeDesk v1.8",
   "sidebar_subtitle": "Lokale Chats · portable Daten · optionale WAV-Ausgabe",
   "new_chat": "Neuer Chat",
   "delete_chat_button": "Löschen",
@@ -278,6 +278,8 @@
   "load_settings_profile_done_title": "Konfiguration geladen",
   "load_settings_profile_done_text": "Die Konfiguration wurde in den Dialog übernommen. Mit Speichern wird sie aktiv.\n{path}",
   "json_files_filter": "JSON-Dateien (*.json);;Alle Dateien (*)",
+  "auto_thinking_for_code_requests_label": "Automatisch zu Thinking Modus wechseln wenn Code erstellt werden soll",
+  "auto_thinking_for_code_requests_tooltip": "Wenn aktiv, wird bei erkannten Code-Anfragen für kompatible Modelle automatisch Thinking aktiviert und zusätzlich ausdrücklich verlangt, den Code wirklich in einem Markdown-Codeblock auszugeben.",
   "edit_auto_answer_question_replies": "Antwortliste für Fragen bearbeiten …",
   "auto_answer_question_replies_settings_hint": "Bearbeite kurze Reaktionen für den Fall, dass die LLM eine Frage stellt.",
   "auto_answer_question_replies_editor_title": "Antwortliste für Fragen bearbeiten",
@@ -285,5 +287,8 @@
   "auto_answer_use_question_replies_for_all_label": "Frage-Antwort-Liste auch für normale Auto-Answer-Antworten mitverwenden",
   "auto_answer_use_question_replies_for_all_tooltip": "Wenn aktiv, dürfen die Antworten aus auto_answer_question_replies.json nicht nur bei Fragen, sondern zusätzlich auch im normalen Auto-Answer-Pool vorkommen. Bei echten Fragen wird diese Liste weiterhin bevorzugt verwendet.",
   "empty_question_replies_title": "Leere Datei",
-  "empty_question_replies_text": "Die JSON-Datei darf nicht leer sein."
+  "empty_question_replies_text": "Die JSON-Datei darf nicht leer sein.",
+  "allow_consecutive_auto_answer_dataset_reuse_label": "Doppelte Verweise nacheinander zulassen",
+  "allow_consecutive_auto_answer_dataset_reuse_tooltip": "Wenn deaktiviert, werden direkte Wiederholungen derselben Einträge aus auto_answer_phrases.json oder auto_answer_question_replies.json im nächsten Auto-Answer-Turn nach Möglichkeit vermieden.",
+  "auto_answer_timer_failed": "Auto-Answer wurde wegen eines internen Fehlers gestoppt."
 }

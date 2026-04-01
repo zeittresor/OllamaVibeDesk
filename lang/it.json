@@ -1,6 +1,6 @@
 {
   "language_name": "Italiano",
-  "app_title": "OllamaVibeDesk v1.0",
+  "app_title": "OllamaVibeDesk v1.8",
   "sidebar_subtitle": "Local chats · portable data · optional WAV output",
   "new_chat": "Nuova chat",
   "delete_chat_button": "Delete",
@@ -278,6 +278,8 @@
   "load_settings_profile_done_title": "Configurazione caricata",
   "load_settings_profile_done_text": "La configurazione è stata caricata nella finestra di dialogo. Diventerà attiva dopo aver premuto Salva.\n{path}",
   "json_files_filter": "File JSON (*.json);;Tutti i file (*)",
+  "auto_thinking_for_code_requests_label": "Passare automaticamente alla modalità Thinking quando deve essere creato del codice",
+  "auto_thinking_for_code_requests_tooltip": "Se attivo, i modelli compatibili usano automaticamente Thinking per le richieste di codice rilevate e il prompt richiede inoltre di fornire davvero il codice in un blocco Markdown delimitato.",
   "edit_auto_answer_question_replies": "Edit question reply list …",
   "auto_answer_question_replies_settings_hint": "Edit short reactions for cases where the LLM asks a question.",
   "auto_answer_question_replies_editor_title": "Edit reply list for questions",
@@ -285,5 +287,8 @@
   "auto_answer_use_question_replies_for_all_label": "Also allow question-reply list in normal auto-answer replies",
   "auto_answer_use_question_replies_for_all_tooltip": "When enabled, answers from auto_answer_question_replies.json may appear not only for questions but also in the normal auto-answer pool. For actual questions this list is still preferred.",
   "empty_question_replies_title": "Empty file",
-  "empty_question_replies_text": "The JSON file must not be empty."
+  "empty_question_replies_text": "The JSON file must not be empty.",
+  "allow_consecutive_auto_answer_dataset_reuse_label": "Allow consecutive duplicate references",
+  "allow_consecutive_auto_answer_dataset_reuse_tooltip": "When disabled, direct repeats of the same entries from auto_answer_phrases.json or auto_answer_question_replies.json are avoided in the next auto-answer turn whenever possible.",
+  "auto_answer_timer_failed": "Auto-answer was stopped due to an internal error."
 }

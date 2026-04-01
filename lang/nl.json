@@ -1,6 +1,6 @@
 {
   "language_name": "Nederlands",
-  "app_title": "OllamaVibeDesk v1.0",
+  "app_title": "OllamaVibeDesk v1.8",
   "sidebar_subtitle": "Local chats · portable data · optional WAV output",
   "new_chat": "Nieuwe chat",
   "delete_chat_button": "Delete",
@@ -278,6 +278,8 @@
   "load_settings_profile_done_title": "Configuratie geladen",
   "load_settings_profile_done_text": "De configuratie is in het dialoogvenster geladen. Na Opslaan wordt deze actief.\n{path}",
   "json_files_filter": "JSON-bestanden (*.json);;Alle bestanden (*)",
+  "auto_thinking_for_code_requests_label": "Automatisch naar Thinking-modus schakelen wanneer code moet worden gemaakt",
+  "auto_thinking_for_code_requests_tooltip": "Als dit actief is, gebruiken compatibele modellen automatisch Thinking bij herkende codeverzoeken, en eist de prompt bovendien dat de code echt in een afgebakend Markdown-codeblok wordt uitgegeven.",
   "edit_auto_answer_question_replies": "Edit question reply list …",
   "auto_answer_question_replies_settings_hint": "Edit short reactions for cases where the LLM asks a question.",
   "auto_answer_question_replies_editor_title": "Edit reply list for questions",
@@ -285,5 +287,8 @@
   "auto_answer_use_question_replies_for_all_label": "Also allow question-reply list in normal auto-answer replies",
   "auto_answer_use_question_replies_for_all_tooltip": "When enabled, answers from auto_answer_question_replies.json may appear not only for questions but also in the normal auto-answer pool. For actual questions this list is still preferred.",
   "empty_question_replies_title": "Empty file",
-  "empty_question_replies_text": "The JSON file must not be empty."
+  "empty_question_replies_text": "The JSON file must not be empty.",
+  "allow_consecutive_auto_answer_dataset_reuse_label": "Allow consecutive duplicate references",
+  "allow_consecutive_auto_answer_dataset_reuse_tooltip": "When disabled, direct repeats of the same entries from auto_answer_phrases.json or auto_answer_question_replies.json are avoided in the next auto-answer turn whenever possible.",
+  "auto_answer_timer_failed": "Auto-answer was stopped due to an internal error."
 }
