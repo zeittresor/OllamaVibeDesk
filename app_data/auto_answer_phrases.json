@@ -13,7 +13,7 @@
       "was wäre dein rat ?",
       "hast du bessere ideen wie man das machen könnte",
       "wo würdest du das gern neu umsetzen",
-      "kannst du das mal etwas lustiger ausführen mit einem plot twist ?",
+      "bitte versuch darauf basierend mal einen witz zu erstellen - ohne dabei jemanden zu verletzen",
       "welcher aspekt daran ist für dich am wichtigsten",
       "was wäre daran die mutigste entscheidung",
       "gibt es eine sanftere alternative",
@@ -38,7 +38,9 @@
       "und wenn du das in die richtung @@@ weiter denkst ?",
       "und im bezug auf @@@ ?",
       "und was würde das bei @@@ verändern ?",
-      "erstell deine bisherige sichtweise mal bitte mit python als code mit GUI (ohne mich nach details zu fragen) die nicht nur rein textbasierend verdeutlicht was du meinst (gern mit extra funktionen die dir relevant erscheinen und den requirements als kommentar im code ohne dafür eine extra datei zu erstellen). komme anschliessend bitte zurück zu mir auf die ebene auf der wir und jetzt gerade unterhalten"
+      "erstell deine bisherige sichtweise mal bitte mit python als code mit GUI (ohne mich nach details zu fragen) die nicht nur rein textbasierend verdeutlicht was du meinst (gern mit extra funktionen die dir relevant erscheinen und den requirements als kommentar im code ohne dafür eine extra datei zu erstellen). komme anschliessend bitte zurück zu mir auf die ebene auf der wir und jetzt gerade unterhalten",
+      "sprechen wir (darauf basierend) mal über die wechselwirkung mit @@@",
+      "Vorschlag zum themenwechsel: @@@ und @@@ in Verbindung mit dem aktuellen kontext unseres gespräches"
     ],
     "en": [
       "and would you have concrete suggestions for improvement",
@@ -52,7 +54,7 @@
       "what would your advice be?",
       "do you have better ideas for how this could be done",
       "where would you like to implement that again in a new way",
-      "could you make that a bit funnier with a plot twist?",
+      "please try to create a joke based on that — without hurting anyone",
       "which aspect matters most to you here",
       "what would be the boldest decision here",
       "is there a gentler alternative",
@@ -77,7 +79,9 @@
       "and what if you think that further in the direction of @@@?",
       "and in relation to @@@?",
       "and what would that change about @@@?",
-      "please create your current point of view as Python code with a GUI (without asking me for details) so that it illustrates what you mean in a way that is not purely text-based, including any extra functions you consider relevant and the requirements as comments in the code without creating a separate file for them. Afterwards, please return to the level on which we are talking right now"
+      "please create your current point of view as Python code with a GUI (without asking me for details) so that it illustrates what you mean in a way that is not purely text-based, including any extra functions you consider relevant and the requirements as comments in the code without creating a separate file for them. Afterwards, please return to the level on which we are talking right now",
+      "let us (based on that) talk for a moment about the interaction with @@@",
+      "suggestion for a topic change: @@@ and @@@ in connection with the current context of our conversation"
     ],
     "es": [
       "y tendrías propuestas concretas de mejora",
@@ -97,7 +101,10 @@
       "y si lo pensaras más en la dirección de @@@ ?",
       "y con respecto a @@@ ?",
       "y qué cambiaría eso en relación con @@@ ?",
-      "por favor, crea tu punto de vista actual como código Python con GUI (sin pedirme detalles) para ilustrar lo que quieres decir de una manera que no sea solo texto, con funciones extra que consideres relevantes y los requirements como comentarios en el código sin crear un archivo aparte. Después vuelve, por favor, al nivel en el que estamos conversando ahora mismo"
+      "por favor, crea tu punto de vista actual como código Python con GUI (sin pedirme detalles) para ilustrar lo que quieres decir de una manera que no sea solo texto, con funciones extra que consideres relevantes y los requirements como comentarios en el código sin crear un archivo aparte. Después vuelve, por favor, al nivel en el que estamos conversando ahora mismo",
+      "por favor, intenta crear un chiste basándote en eso, sin herir a nadie",
+      "hablemos (basándonos en eso) un momento sobre la interacción con @@@",
+      "propuesta de cambio de tema: @@@ y @@@ en relación con el contexto actual de nuestra conversación"
     ],
     "fr": [
       "et aurais-tu des propositions d'amélioration concrètes",
@@ -117,7 +124,10 @@
       "et si tu poussais cela davantage dans la direction de @@@ ?",
       "et par rapport à @@@ ?",
       "et qu'est-ce que cela changerait concernant @@@ ?",
-      "merci de créer ton point de vue actuel en code Python avec une interface graphique (sans me demander de détails), de manière à illustrer ce que tu veux dire autrement que par du simple texte, avec volontiers des fonctions supplémentaires que tu juges pertinentes et les requirements en commentaire dans le code sans créer de fichier séparé. Ensuite, reviens s'il te plaît au niveau sur lequel nous parlons en ce moment"
+      "merci de créer ton point de vue actuel en code Python avec une interface graphique (sans me demander de détails), de manière à illustrer ce que tu veux dire autrement que par du simple texte, avec volontiers des fonctions supplémentaires que tu juges pertinentes et les requirements en commentaire dans le code sans créer de fichier séparé. Ensuite, reviens s'il te plaît au niveau sur lequel nous parlons en ce moment",
+      "essaie s’il te plaît de créer une blague à partir de cela — sans blesser qui que ce soit",
+      "parlons (sur cette base) un peu de l’interaction avec @@@",
+      "proposition de changement de sujet : @@@ et @@@ en lien avec le contexte actuel de notre conversation"
     ],
     "hi": [
       "okay, I understood all of that, thank you. maybe we can talk about something else",
@@ -125,7 +135,10 @@
       "और अगर तुम इसे @@@ की दिशा में आगे सोचो?",
       "और @@@ के संदर्भ में?",
       "और इससे @@@ के बारे में क्या बदल जाएगा?",
-      "कृपया अपने अब तक के दृष्टिकोण को GUI सहित Python कोड के रूप में बनाइए (मुझसे विवरण पूछे बिना), ताकि आप जो कहना चाहते हैं वह केवल टेक्स्ट के रूप में नहीं बल्कि अधिक स्पष्ट रूप से दिखे; चाहें तो अतिरिक्त फ़ंक्शन जोड़ें जो आपको प्रासंगिक लगें, और requirements को कोड में टिप्पणी के रूप में लिखें, अलग फ़ाइल बनाए बिना। उसके बाद कृपया फिर उसी स्तर पर लौट आएँ जिस पर हम अभी बात कर रहे हैं"
+      "कृपया अपने अब तक के दृष्टिकोण को GUI सहित Python कोड के रूप में बनाइए (मुझसे विवरण पूछे बिना), ताकि आप जो कहना चाहते हैं वह केवल टेक्स्ट के रूप में नहीं बल्कि अधिक स्पष्ट रूप से दिखे; चाहें तो अतिरिक्त फ़ंक्शन जोड़ें जो आपको प्रासंगिक लगें, और requirements को कोड में टिप्पणी के रूप में लिखें, अलग फ़ाइल बनाए बिना। उसके बाद कृपया फिर उसी स्तर पर लौट आएँ जिस पर हम अभी बात कर रहे हैं",
+      "कृपया इस पर आधारित एक मज़ाक बनाने की कोशिश करो — बिना किसी को ठेस पहुँचाए",
+      "आओ (इस आधार पर) @@@ के साथ पारस्परिक प्रभाव के बारे में बात करें",
+      "विषय बदलने का प्रस्ताव: @@@ और @@@ हमारे वर्तमान संवाद के संदर्भ में"
     ],
     "it": [
       "ok, ho capito tutto, grazie. forse possiamo parlare di qualcos'altro",
@@ -133,7 +146,10 @@
       "e se lo spingessi un po' di più nella direzione di @@@?",
       "e in relazione a @@@?",
       "e cosa cambierebbe rispetto a @@@?",
-      "per favore crea il tuo punto di vista attuale come codice Python con GUI (senza chiedermi dettagli) così da mostrare ciò che intendi in modo non solo testuale, con eventuali funzioni extra che ritieni rilevanti e i requirements come commenti nel codice senza creare un file separato. Poi torna per favore al livello su cui stiamo parlando adesso"
+      "per favore crea il tuo punto di vista attuale come codice Python con GUI (senza chiedermi dettagli) così da mostrare ciò che intendi in modo non solo testuale, con eventuali funzioni extra che ritieni rilevanti e i requirements come commenti nel codice senza creare un file separato. Poi torna per favore al livello su cui stiamo parlando adesso",
+      "per favore prova a creare una battuta basata su questo, senza ferire nessuno",
+      "parliamo (sulla base di questo) un po’ dell’interazione con @@@",
+      "proposta di cambio tema: @@@ e @@@ in relazione al contesto attuale della nostra conversazione"
     ],
     "ja": [
       "わかりました、ありがとう。少し別の話題にしてみませんか。",
@@ -141,7 +157,10 @@
       "それを@@@の方向にもう少し考えるとどうなりますか。",
       "@@@との関係ではどうですか。",
       "それによって@@@はどう変わりますか。",
-      "今のあなたの見方を、私に詳細を聞かずに、GUI付きのPythonコードとして作成してください。単なるテキストだけではなく、あなたの言いたいことが分かる形にして、必要だと思う追加機能も入れ、requirements は別ファイルを作らずコード内コメントとして書いてください。そのあと、今ここで話しているこの会話のレベルに戻ってください"
+      "今のあなたの見方を、私に詳細を聞かずに、GUI付きのPythonコードとして作成してください。単なるテキストだけではなく、あなたの言いたいことが分かる形にして、必要だと思う追加機能も入れ、requirements は別ファイルを作らずコード内コメントとして書いてください。そのあと、今ここで話しているこの会話のレベルに戻ってください",
+      "それをもとに、誰も傷つけない形で冗談を作ってみてください。",
+      "（それを踏まえて）@@@との相互作用について少し話してみましょう。",
+      "話題転換の提案です。@@@ と @@@ を今の会話の文脈と結びつけてみましょう。"
     ],
     "ko": [
       "알겠어요, 고마워요. 조금 다른 주제로 넘어가 볼까요?",
@@ -149,7 +168,10 @@
       "그것을 @@@ 쪽으로 더 생각해 보면 어떨까요?",
       "그리고 @@@와 관련해서는요?",
       "그리고 그것이 @@@에 대해 무엇을 바꿀까요?",
-      "지금까지의 관점을 GUI가 있는 Python 코드로 만들어 주세요. 저에게 세부사항을 묻지 말고, 단순한 텍스트만이 아니라 당신의 뜻이 드러나도록 해 주세요. 필요하다고 생각하는 추가 기능도 넣고, requirements 는 별도 파일 없이 코드 주석으로 적어 주세요. 그 다음에는 우리가 지금 대화하던 수준으로 다시 돌아와 주세요"
+      "지금까지의 관점을 GUI가 있는 Python 코드로 만들어 주세요. 저에게 세부사항을 묻지 말고, 단순한 텍스트만이 아니라 당신의 뜻이 드러나도록 해 주세요. 필요하다고 생각하는 추가 기능도 넣고, requirements 는 별도 파일 없이 코드 주석으로 적어 주세요. 그 다음에는 우리가 지금 대화하던 수준으로 다시 돌아와 주세요",
+      "그걸 바탕으로 아무도 상처 주지 않는 농담을 한번 만들어 보세요",
+      "그걸 바탕으로 @@@와의 상호작용에 대해 한번 이야기해 봅시다",
+      "주제 전환 제안: @@@와 @@@를 현재 대화의 맥락과 연결해 보기"
     ],
     "nl": [
       "oké, ik heb dat allemaal begrepen, dank je. misschien kunnen we over iets anders praten",
@@ -157,7 +179,10 @@
       "en als je dat verder doordenkt in de richting van @@@?",
       "en met betrekking tot @@@?",
       "en wat zou dat veranderen aan @@@?",
-      "maak alsjeblieft je huidige zienswijze als Python-code met GUI (zonder mij om details te vragen), zodat duidelijk wordt wat je bedoelt op een manier die niet alleen uit tekst bestaat, graag met extra functies die jij relevant vindt en met de requirements als commentaar in de code zonder daarvoor een apart bestand te maken. Kom daarna alsjeblieft weer terug naar het niveau waarop we nu met elkaar praten"
+      "maak alsjeblieft je huidige zienswijze als Python-code met GUI (zonder mij om details te vragen), zodat duidelijk wordt wat je bedoelt op een manier die niet alleen uit tekst bestaat, graag met extra functies die jij relevant vindt en met de requirements als commentaar in de code zonder daarvoor een apart bestand te maken. Kom daarna alsjeblieft weer terug naar het niveau waarop we nu met elkaar praten",
+      "probeer hier alsjeblieft een grap van te maken, zonder daarbij iemand te kwetsen",
+      "laten we (hierop gebaseerd) eens praten over de wisselwerking met @@@",
+      "voorstel voor een onderwerpwissel: @@@ en @@@ in verband met de huidige context van ons gesprek"
     ],
     "pl": [
       "dobrze, wszystko zrozumiałem, dziękuję. może porozmawiajmy o czymś innym",
@@ -165,7 +190,10 @@
       "a gdyby pociągnąć to dalej w stronę @@@?",
       "a w odniesieniu do @@@?",
       "a co to zmieniłoby w kwestii @@@?",
-      "proszę przedstaw swój dotychczasowy punkt widzenia jako kod Pythona z GUI (bez pytania mnie o szczegóły), tak aby pokazać to, co masz na myśli, nie tylko w formie tekstowej; możesz dodać dodatkowe funkcje, które uważasz za istotne, oraz requirements jako komentarze w kodzie bez tworzenia osobnego pliku. Potem proszę wróć do poziomu, na jakim teraz rozmawiamy"
+      "proszę przedstaw swój dotychczasowy punkt widzenia jako kod Pythona z GUI (bez pytania mnie o szczegóły), tak aby pokazać to, co masz na myśli, nie tylko w formie tekstowej; możesz dodać dodatkowe funkcje, które uważasz za istotne, oraz requirements jako komentarze w kodzie bez tworzenia osobnego pliku. Potem proszę wróć do poziomu, na jakim teraz rozmawiamy",
+      "spróbuj proszę na tej podstawie ułożyć żart, nie raniąc przy tym nikogo",
+      "porozmawiajmy (na tej podstawie) chwilę o wzajemnym oddziaływaniu z @@@",
+      "propozycja zmiany tematu: @@@ i @@@ w związku z aktualnym kontekstem naszej rozmowy"
     ],
     "pt": [
       "ok, entendi tudo isso, obrigado. talvez possamos falar de outra coisa",
@@ -173,7 +201,10 @@
       "e se você levasse isso mais na direção de @@@?",
       "e em relação a @@@?",
       "e o que isso mudaria em relação a @@@?",
-      "por favor, crie sua visão atual como código Python com GUI (sem me pedir detalhes), de modo que mostre o que você quer dizer de uma forma que não seja apenas texto, com funções extras que você considere relevantes e os requirements como comentários no código sem criar um arquivo separado. Depois, por favor, volte ao nível em que estamos conversando agora"
+      "por favor, crie sua visão atual como código Python com GUI (sem me pedir detalhes), de modo que mostre o que você quer dizer de uma forma que não seja apenas texto, com funções extras que você considere relevantes e os requirements como comentários no código sem criar um arquivo separado. Depois, por favor, volte ao nível em que estamos conversando agora",
+      "por favor, tente criar uma piada com base nisso, sem machucar ninguém",
+      "vamos falar (com base nisso) um pouco sobre a interação com @@@",
+      "sugestão de mudança de tema: @@@ e @@@ em relação ao contexto atual da nossa conversa"
     ],
     "ru": [
       "и какие конкретные улучшения ты бы предложил",
@@ -193,7 +224,10 @@
       "а если развить эту мысль в сторону @@@?",
       "а в отношении @@@?",
       "и что это изменило бы в контексте @@@?",
-      "пожалуйста, создай своё текущее видение в виде Python-кода с GUI (не спрашивая меня о деталях), чтобы это наглядно показывало твою мысль не только текстом; можно добавить дополнительные функции, которые ты считаешь важными, и requirements в комментариях внутри кода без отдельного файла. После этого, пожалуйста, вернись ко мне на тот уровень, на котором мы сейчас разговариваем"
+      "пожалуйста, создай своё текущее видение в виде Python-кода с GUI (не спрашивая меня о деталях), чтобы это наглядно показывало твою мысль не только текстом; можно добавить дополнительные функции, которые ты считаешь важными, и requirements в комментариях внутри кода без отдельного файла. После этого, пожалуйста, вернись ко мне на тот уровень, на котором мы сейчас разговариваем",
+      "пожалуйста, попробуй на этой основе придумать шутку — никого при этом не задевая",
+      "давай (исходя из этого) немного поговорим о взаимосвязи с @@@",
+      "предложение сменить тему: @@@ и @@@ в связи с текущим контекстом нашего разговора"
     ]
   },
   "topic_words": {

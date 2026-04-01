@@ -41,13 +41,14 @@ class OllamaClient:
         keep_alive: str = '10m',
         options: Optional[dict] = None,
         stream: bool = True,
+        think: bool = False,
     ) -> dict:
         payload = {
             'model': model,
             'messages': messages,
             'stream': stream,
             'keep_alive': keep_alive,
-            'think': False,
+            'think': bool(think),
         }
         if options:
             payload['options'] = options
@@ -56,15 +57,19 @@ class OllamaClient:
         return payload
 
     @staticmethod
-    def _extract_text(data: dict) -> str:
+    def _extract_parts(data: dict) -> tuple[str, str]:
         message = data.get('message') or {}
-        parts = [
+        content_parts = [
             message.get('content', ''),
             data.get('response', ''),
+        ]
+        thinking_parts = [
             message.get('thinking', ''),
             data.get('thinking', ''),
         ]
-        return ''.join(part for part in parts if isinstance(part, str) and part)
+        content = ''.join(part for part in content_parts if isinstance(part, str) and part)
+        thinking = ''.join(part for part in thinking_parts if isinstance(part, str) and part)
+        return content, thinking
 
     def chat_once(
         self,
@@ -74,8 +79,9 @@ class OllamaClient:
         keep_alive: str = '10m',
         options: Optional[dict] = None,
         timeout: int = 600,
+        think: bool = False,
     ) -> str:
-        payload = self._payload(model, messages, system_prompt, keep_alive, options, stream=False)
+        payload = self._payload(model, messages, system_prompt, keep_alive, options, stream=False, think=think)
         response = requests.post(
             self._url('/api/chat'),
             json=payload,
@@ -83,7 +89,8 @@ class OllamaClient:
         )
         response.raise_for_status()
         data = response.json()
-        return self._extract_text(data).strip()
+        content, _thinking = self._extract_parts(data)
+        return content.strip()
 
     def stream_chat(
         self,
@@ -93,8 +100,9 @@ class OllamaClient:
         keep_alive: str = '10m',
         options: Optional[dict] = None,
         timeout: int = 600,
-    ) -> Iterable[str]:
-        payload = self._payload(model, messages, system_prompt, keep_alive, options, stream=True)
+        think: bool = False,
+    ) -> Iterable[dict]:
+        payload = self._payload(model, messages, system_prompt, keep_alive, options, stream=True, think=think)
         emitted_any = False
 
         with requests.post(
@@ -108,10 +116,10 @@ class OllamaClient:
                 if not raw_line:
                     continue
                 data = json.loads(raw_line)
-                text = self._extract_text(data)
-                if text:
+                content, thinking = self._extract_parts(data)
+                if content or thinking:
                     emitted_any = True
-                    yield text
+                    yield {'content': content, 'thinking': thinking}
                 if data.get('done'):
                     break
 
@@ -123,6 +131,7 @@ class OllamaClient:
                 keep_alive=keep_alive,
                 options=options,
                 timeout=timeout,
+                think=think,
             )
             if fallback:
-                yield fallback
+                yield {'content': fallback, 'thinking': ''}

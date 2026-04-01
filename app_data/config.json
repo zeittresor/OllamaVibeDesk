@@ -33,5 +33,7 @@
   "rollover_carry_messages": 5,
   "auto_answer_short_instruction_overrides": {},
   "debug_trace_enabled": false,
-  "auto_answer_use_question_replies_for_all": true
+  "auto_thinking_for_code_requests": true,
+  "auto_answer_use_question_replies_for_all": true,
+  "allow_consecutive_auto_answer_dataset_reuse": false
 }

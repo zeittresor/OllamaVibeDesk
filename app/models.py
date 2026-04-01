@@ -13,6 +13,8 @@ class ChatMessage:
     generated: bool = False
     audio_path: Optional[str] = None
     display_content: Optional[str] = None
+    auto_answer_source_kind: Optional[str] = None
+    auto_answer_source_key: Optional[str] = None
 
     @classmethod
     def now(
@@ -22,6 +24,8 @@ class ChatMessage:
         audio_path: Optional[str] = None,
         generated: bool = False,
         display_content: Optional[str] = None,
+        auto_answer_source_kind: Optional[str] = None,
+        auto_answer_source_key: Optional[str] = None,
     ) -> "ChatMessage":
         return cls(
             role=role,
@@ -30,6 +34,8 @@ class ChatMessage:
             generated=generated,
             audio_path=audio_path,
             display_content=display_content,
+            auto_answer_source_kind=auto_answer_source_kind,
+            auto_answer_source_key=auto_answer_source_key,
         )
 
 

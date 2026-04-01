@@ -59,11 +59,44 @@ from app.tts_setup import VibeVoiceManager
 from app.i18n import available_languages, load_language_pack
 
 
+def normalize_markdown_code_fences(text: str, close_unfinished: bool = False) -> str:
+    normalized = str(text or '').replace('\r\n', '\n').replace('\r', '\n')
+    normalized = re.sub(r'(?m)^([`~]{3,})[ \t]*\n([A-Za-z0-9_+.#-]+)[ \t]*\n', lambda m: f"{m.group(1)}{m.group(2)}\n", normalized)
+    normalized = re.sub(r'(?m)^([`~]{3,})[ \t]+([A-Za-z0-9_+.#-]+)[ \t]*$', lambda m: f"{m.group(1)}{m.group(2)}", normalized)
+    if not close_unfinished:
+        return normalized
+    open_char: str | None = None
+    open_len = 0
+    for line in normalized.split('\n'):
+        stripped = line.strip()
+        match = re.match(r'^([`~]{3,})([^`]*)$', stripped)
+        if not match:
+            continue
+        fence = match.group(1)
+        fence_char = fence[0]
+        fence_len = len(fence)
+        if open_char is None:
+            open_char = fence_char
+            open_len = fence_len
+        elif fence_char == open_char and fence_len >= open_len:
+            open_char = None
+            open_len = 0
+    if open_char is not None:
+        normalized = normalized.rstrip() + f"\n{open_char * open_len}"
+    return normalized
+
+
+def strip_thinking_tags(text: str) -> str:
+    cleaned = str(text or '')
+    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    return cleaned.strip()
+
+
 def markdown_to_tts_text(text: str) -> str:
     if not text:
         return ''
 
-    cleaned = text.replace('\r\n', '\n').replace('\r', '\n')
+    cleaned = normalize_markdown_code_fences(strip_thinking_tags(text), close_unfinished=True)
 
     code_block_found = False
 
@@ -72,51 +105,37 @@ def markdown_to_tts_text(text: str) -> str:
         code_block_found = True
         return '\nCodeblock ausgelassen.\n'
 
-    cleaned = re.sub(r"```.*?```", _strip_code_block, cleaned, flags=re.DOTALL)
-    cleaned = re.sub(r"~~~.*?~~~", _strip_code_block, cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'```.*?```', _strip_code_block, cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'~~~.*?~~~', _strip_code_block, cleaned, flags=re.DOTALL)
 
-    # Markdown links/images -> keep visible label only
-    cleaned = re.sub(r"!\[([^\]]*)\]\([^)]*\)", lambda m: (m.group(1) or '').strip(), cleaned)
-    cleaned = re.sub(r"\[([^\]]+)\]\([^)]*\)", lambda m: m.group(1).strip(), cleaned)
-
-    # Raw URLs are usually noisy in TTS
-    cleaned = re.sub(r"https?://\S+", '', cleaned)
-
-    # Headings / blockquotes / bullets / numbered lists
-    cleaned = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", '', cleaned)
-    cleaned = re.sub(r"(?m)^\s*>+\s*", '', cleaned)
-    cleaned = re.sub(r"(?m)^\s*[-*+]\s+", '• ', cleaned)
-    cleaned = re.sub(r"(?m)^\s*\d+[.)]\s+", '', cleaned)
-
-    # Table separators and markdown emphasis markers
-    cleaned = re.sub(r"(?m)^\s*\|?\s*:?[-]{2,}:?\s*(\|\s*:?[-]{2,}:?\s*)+\|?\s*$", '', cleaned)
+    cleaned = re.sub(r'!\[([^\]]*)\]\([^)]*\)', lambda m: (m.group(1) or '').strip(), cleaned)
+    cleaned = re.sub(r'\[([^\]]+)\]\([^)]*\)', lambda m: m.group(1).strip(), cleaned)
+    cleaned = re.sub(r'https?://\S+', '', cleaned)
+    cleaned = re.sub(r'(?m)^\s{0,3}#{1,6}\s*', '', cleaned)
+    cleaned = re.sub(r'(?m)^\s*>+\s*', '', cleaned)
+    cleaned = re.sub(r'(?m)^\s*[-*+]\s+', '• ', cleaned)
+    cleaned = re.sub(r'(?m)^\s*\d+[.)]\s+', '', cleaned)
+    cleaned = re.sub(r'(?m)^\s*\|?\s*:?[-]{2,}:?\s*(\|\s*:?[-]{2,}:?\s*)+\|?\s*$', '', cleaned)
     cleaned = cleaned.replace('|', ' ')
-    cleaned = re.sub(r"([*_~`])\1*", '', cleaned)
-
-    # Footnote/citation-like markers such as [1], [12], [Quelle], sandbox:/...
-    cleaned = re.sub(r"(?:sandbox:/\S+)", '', cleaned)
-    cleaned = re.sub(r"(?<!\w)\[(?:\d+|Quelle|Quellen|source|sources?)\](?!\w)", '', cleaned, flags=re.IGNORECASE)
-
-    # HTML leftovers
-    cleaned = re.sub(r"<[^>]+>", ' ', cleaned)
+    cleaned = re.sub(r'([*_~`])\1*', '', cleaned)
+    cleaned = re.sub(r'(?:sandbox:/\S+)', '', cleaned)
+    cleaned = re.sub(r'(?<!\w)\[(?:\d+|Quelle|Quellen|source|sources?)\](?!\w)', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<[^>]+>', ' ', cleaned)
     cleaned = html.unescape(cleaned)
-
-    # Normalize bullets and whitespace for better speech flow
     cleaned = cleaned.replace('•', '\n- ')
-    cleaned = re.sub(r"[ \t]+", ' ', cleaned)
-    cleaned = re.sub(r"\n{3,}", '\n\n', cleaned)
+    cleaned = re.sub(r'[ \t]+', ' ', cleaned)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
 
-    lines = []
+    result_lines = []
     for raw_line in cleaned.split('\n'):
         line = raw_line.strip(' \t-')
         if not line:
             continue
-        # skip lines that are only punctuation/symbols
-        if re.fullmatch(r"[\W_]+", line):
+        if re.fullmatch(r'[\W_]+', line):
             continue
-        lines.append(line)
+        result_lines.append(line)
 
-    cleaned = '\n'.join(lines).strip()
+    cleaned = '\n'.join(result_lines).strip()
     if code_block_found and 'Codeblock ausgelassen.' not in cleaned:
         cleaned = (cleaned + '\n\nCodeblock ausgelassen.').strip() if cleaned else 'Codeblock ausgelassen.'
 
@@ -226,6 +245,8 @@ def load_auto_answer_data() -> dict:
         return {"enabled": True, "phrases": {"de": []}}
 
 
+
+
 def load_auto_answer_question_reply_data() -> dict:
     ensure_directories()
     try:
@@ -250,10 +271,10 @@ TOKEN_PRESET_VALUES = [64, 128, 256, 512, 1024, 2048, 4096, 8192]
 AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
 AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 5
 AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
-APP_VERSION = "v1.0"
-APP_TITLE_BASE = f"OllamaVibeDesk {APP_VERSION}"
-APP_TITLE_DATE = datetime.now().strftime("%Y-%m-%d")
 AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
+APP_VERSION = "v1.8"
+APP_TITLE_WITH_VERSION = f"OllamaVibeDesk {APP_VERSION}"
+APP_WINDOW_DATE = "2026-04-01"
 
 
 def nearest_token_preset_index(value: int) -> int:
@@ -417,14 +438,44 @@ def is_context_overflow_error(message: str) -> bool:
     return any(needle in hay for needle in needles)
 
 
+def auto_answer_result(text: str, source_kind: str = "", source_key: str = "") -> dict:
+    return {
+        "text": str(text or "").strip(),
+        "source_kind": str(source_kind or ""),
+        "source_key": str(source_key or ""),
+    }
+
+
 def iter_code_blocks(text: str) -> list[tuple[str, str]]:
     blocks: list[tuple[str, str]] = []
-    pattern = re.compile(r"```([A-Za-z0-9_+.#-]*)[ 	]*\n(.*?)```", re.DOTALL)
-    for match in pattern.finditer(str(text or "")):
-        language = (match.group(1) or "").strip()
-        code = match.group(2) or ""
-        if code.strip():
-            blocks.append((language, code.rstrip() + "\n"))
+    normalized = normalize_markdown_code_fences(text, close_unfinished=True)
+    lines = normalized.split('\n')
+    open_char: str | None = None
+    open_len = 0
+    language = ''
+    buffer: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if open_char is None:
+            match = re.match(r'^([`~]{3,})([A-Za-z0-9_+.#-]*)\s*$', stripped)
+            if match:
+                fence = match.group(1)
+                open_char = fence[0]
+                open_len = len(fence)
+                language = (match.group(2) or '').strip()
+                buffer = []
+            continue
+        closing = re.match(r'^([`~]{3,})\s*$', stripped)
+        if closing and closing.group(1)[0] == open_char and len(closing.group(1)) >= open_len:
+            code = '\n'.join(buffer).rstrip() + '\n'
+            if code.strip():
+                blocks.append((language, code))
+            open_char = None
+            open_len = 0
+            language = ''
+            buffer = []
+            continue
+        buffer.append(line)
     return blocks
 
 
@@ -480,6 +531,42 @@ def save_generated_code_blocks(text: str) -> list[Path]:
         path.write_text(code, encoding='utf-8')
         saved.append(path)
     return saved
+
+
+def build_assistant_visible_content(answer_text: str, thinking_text: str = '') -> str:
+    answer = normalize_markdown_code_fences(strip_thinking_tags(answer_text or ''), close_unfinished=True).strip()
+    thinking = normalize_markdown_code_fences(strip_thinking_tags(thinking_text or ''), close_unfinished=True).strip()
+    if not thinking:
+        return answer
+    quoted_lines = []
+    for line in thinking.splitlines():
+        quoted_lines.append('> ' + line if line.strip() else '>')
+    thinking_block = '\n'.join(quoted_lines).strip()
+    return f"**Thinking**\n\n{thinking_block}\n\n---\n\n{answer}".strip()
+
+
+def build_window_title() -> str:
+    return f"{APP_TITLE_WITH_VERSION} - {APP_WINDOW_DATE}"
+
+
+def text_looks_like_code_request(text: str) -> bool:
+    hay = str(text or "").lower()
+    if not hay.strip():
+        return False
+    direct_keywords = [
+        ' python', 'python code', ' c#', 'csharp', ' php', ' html', ' gui', 'interface',
+        'programmcode', 'program code', 'source code', 'codeblock', 'markdown code',
+        'write code', 'generate code', 'create code', 'erstell', 'erzeuge', 'schreib code',
+        'programm', 'script', 'application', 'app with gui', 'with gui', 'mit gui'
+    ]
+    return any(keyword in f" {hay} " for keyword in direct_keywords)
+
+
+def code_request_instruction(language_code: str) -> str:
+    code = (language_code or 'de').lower()
+    if code.startswith('de'):
+        return 'Wenn in dieser Antwort Programmcode verlangt wird, liefere den funktionalen Code direkt in mindestens einem Markdown-Codeblock mit passender Sprachkennung. Sage nicht nur, dass du Code erstellen würdest — gib ihn wirklich aus.'
+    return 'If this answer asks for program code, provide the functional code directly inside at least one fenced Markdown code block with the appropriate language tag. Do not only say that you would create code — actually output it.'
 
 
 class DebugTraceLogger:
@@ -588,8 +675,8 @@ def _normalize_compare_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip()).casefold()
 
 
-def _expand_auto_answer_phrase_templates(phrases: list[str], topic_words: list[str]) -> list[str]:
-    expanded: list[str] = []
+def _expand_auto_answer_phrase_templates(phrases: list[str], topic_words: list[str]) -> list[tuple[str, str]]:
+    expanded: list[tuple[str, str]] = []
     clean_topics = [str(word or "").strip() for word in topic_words if str(word or "").strip()]
     unique_topics: list[str] = []
     seen_topics: set[str] = set()
@@ -600,35 +687,67 @@ def _expand_auto_answer_phrase_templates(phrases: list[str], topic_words: list[s
         seen_topics.add(normalized)
         unique_topics.append(word)
 
+    def _replace_placeholders_distinct(template: str, topics: list[str]) -> list[str]:
+        placeholder_count = template.count("@@@")
+        if placeholder_count <= 0:
+            return [template]
+        if not topics:
+            return [template.replace("@@@", "…")]
+        results: list[str] = []
+        seen_results: set[str] = set()
+
+        def _walk(index: int, chosen: list[str]) -> None:
+            if index >= placeholder_count:
+                rendered = template
+                for topic in chosen:
+                    rendered = rendered.replace("@@@", topic, 1)
+                if rendered not in seen_results:
+                    seen_results.add(rendered)
+                    results.append(rendered)
+                return
+            available = [topic for topic in topics if topic not in chosen]
+            if not available:
+                available = topics
+            for topic in available:
+                _walk(index + 1, chosen + [topic])
+
+        _walk(0, [])
+        return results
+
     for phrase in phrases:
         cleaned = str(phrase or "").strip()
         if not cleaned:
             continue
+        source_key = cleaned
         if "@@@" not in cleaned:
-            expanded.append(cleaned)
+            expanded.append((cleaned, source_key))
             continue
-        if not unique_topics:
-            expanded.append(cleaned.replace("@@@", "…"))
-            continue
-        pool = unique_topics[:]
-        random.shuffle(pool)
-        for topic in pool[: min(4, len(pool))]:
-            expanded.append(cleaned.replace("@@@", topic))
+        for rendered in _replace_placeholders_distinct(cleaned, unique_topics):
+            expanded.append((rendered, source_key))
     return expanded
 
 
 
-def _unique_auto_answer_phrases(phrases: list[str], blocked_recent: list[str]) -> list[str]:
+def _unique_auto_answer_candidates(candidates: list[tuple[str, str]], blocked_recent: list[str], blocked_source_keys: list[str] | None = None, allow_consecutive_dataset_reuse: bool = False) -> list[tuple[str, str]]:
     blocked = {_normalize_compare_text(item) for item in blocked_recent if _normalize_compare_text(item)}
-    result: list[str] = []
-    seen: set[str] = set()
-    for phrase in phrases:
+    blocked_sources = {str(item or "").strip() for item in (blocked_source_keys or []) if str(item or "").strip()}
+    result: list[tuple[str, str]] = []
+    seen_texts: set[str] = set()
+    seen_source_keys: set[str] = set()
+    for phrase, source_key in candidates:
         cleaned = str(phrase or "").strip()
         normalized = _normalize_compare_text(cleaned)
-        if not cleaned or not normalized or normalized in blocked or normalized in seen:
+        key = str(source_key or "").strip()
+        if not cleaned or not normalized or normalized in blocked or normalized in seen_texts:
             continue
-        seen.add(normalized)
-        result.append(cleaned)
+        if key and not allow_consecutive_dataset_reuse and key in blocked_sources:
+            continue
+        if key and key in seen_source_keys:
+            continue
+        seen_texts.add(normalized)
+        if key:
+            seen_source_keys.add(key)
+        result.append((cleaned, key))
     return result
 
 
@@ -739,9 +858,11 @@ def generate_auto_answer(
     phrase_data: dict | None = None,
     question_reply_data: dict | None = None,
     recent_generated_user_messages: list[str] | None = None,
+    recent_dataset_source_keys: list[str] | None = None,
     eliza_share_percent: int = 60,
     use_question_replies_for_all: bool = True,
-) -> str:
+    allow_consecutive_dataset_reuse: bool = False,
+) -> dict:
     cleaned = markdown_to_tts_text(source_text or "")
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if not cleaned:
@@ -759,8 +880,6 @@ def generate_auto_answer(
         topic_words_map = phrase_data.get("topic_words")
         if isinstance(topic_words_map, dict):
             topic_words = [str(x).strip() for x in topic_words_map.get(code, []) if str(x).strip()]
-            if not topic_words and code != "en":
-                topic_words = [str(x).strip() for x in topic_words_map.get("en", []) if str(x).strip()]
 
     if code.startswith("de"):
         reflected = _reflect_fragment_de(fragment)
@@ -809,23 +928,39 @@ def generate_auto_answer(
         ]
 
     blocked_recent = recent_generated_user_messages or []
+    blocked_source_keys = recent_dataset_source_keys or []
     question_reply_candidates = _question_reply_candidates(question_reply_data, code)
     is_question = cleaned.rstrip().endswith("?")
-    if is_question and question_reply_candidates:
-        return random.choice(question_reply_candidates).strip()
-    phrase_pool = _expand_auto_answer_phrase_templates(phrases, topic_words)
+    question_candidates = _unique_auto_answer_candidates(
+        [(reply, f"question_reply::{reply}") for reply in question_reply_candidates],
+        blocked_recent,
+        blocked_source_keys=blocked_source_keys,
+        allow_consecutive_dataset_reuse=allow_consecutive_dataset_reuse,
+    )
+    if is_question and question_candidates:
+        selected_text, selected_key = random.choice(question_candidates)
+        return auto_answer_result(selected_text, "question_reply", selected_key)
+
+    phrase_pool = [(text_value, f"phrase::{source_key}") for text_value, source_key in _expand_auto_answer_phrase_templates(phrases, topic_words)]
     if use_question_replies_for_all and question_reply_candidates:
-        phrase_pool.extend(question_reply_candidates)
-    phrase_candidates = _unique_auto_answer_phrases(phrase_pool, blocked_recent)
+        phrase_pool.extend((reply, f"question_reply::{reply}") for reply in question_reply_candidates)
+    phrase_candidates = _unique_auto_answer_candidates(
+        phrase_pool,
+        blocked_recent,
+        blocked_source_keys=blocked_source_keys,
+        allow_consecutive_dataset_reuse=allow_consecutive_dataset_reuse,
+    )
     eliza_candidates = [t for t in templates if t.strip()]
     eliza_share = max(0, min(100, int(eliza_share_percent or 0)))
 
     use_eliza = not phrase_candidates or random.randint(1, 100) <= eliza_share
     if use_eliza and eliza_candidates:
-        return random.choice(eliza_candidates).strip()
+        return auto_answer_result(random.choice(eliza_candidates).strip(), "eliza", "")
     if phrase_candidates:
-        return random.choice(phrase_candidates).strip()
-    return random.choice(eliza_candidates).strip() if eliza_candidates else ""
+        selected_text, selected_key = random.choice(phrase_candidates)
+        selected_kind = "question_reply" if selected_key.startswith("question_reply::") else "phrase"
+        return auto_answer_result(selected_text, selected_kind, selected_key)
+    return auto_answer_result(random.choice(eliza_candidates).strip(), "eliza", "") if eliza_candidates else auto_answer_result("")
 
 
 def pretty_timestamp(value: str) -> str:
@@ -1089,9 +1224,10 @@ class BubbleWidget(QFrame):
         self.role_label = value or self.role_label
         self.meta_label.setText(self.role_label + " · " + pretty_timestamp(self.message.created_at))
 
-    def set_content(self, text: str) -> None:
+    def set_content(self, text: str, stored_text: Optional[str] = None) -> None:
         if self.is_assistant:
-            self.message.content = text
+            self.message.display_content = text
+            self.message.content = stored_text if stored_text is not None else text
         else:
             self.message.display_content = text
         has_visible_text = bool(text.strip())
@@ -1103,17 +1239,18 @@ class BubbleWidget(QFrame):
 
 
 class ChatWorker(QObject):
-    chunk = pyqtSignal(str)
+    chunk = pyqtSignal(object)
     finished = pyqtSignal()
     failed = pyqtSignal(str)
 
-    def __init__(self, base_url: str, model_name: str, messages: List[dict], system_prompt: str, max_tokens: int = 512) -> None:
+    def __init__(self, base_url: str, model_name: str, messages: List[dict], system_prompt: str, max_tokens: int = 512, think_mode: bool = False) -> None:
         super().__init__()
         self.base_url = base_url
         self.model_name = model_name
         self.messages = messages
         self.system_prompt = system_prompt
         self.max_tokens = int(max_tokens or 512)
+        self.think_mode = bool(think_mode)
         self._cancel_requested = False
 
     def cancel(self) -> None:
@@ -1122,15 +1259,16 @@ class ChatWorker(QObject):
     def run(self) -> None:
         try:
             client = OllamaClient(self.base_url)
-            for text in client.stream_chat(
+            for payload in client.stream_chat(
                 model=self.model_name,
                 messages=self.messages,
                 system_prompt=self.system_prompt,
                 options={"num_predict": self.max_tokens} if self.max_tokens > 0 else None,
+                think=self.think_mode,
             ):
                 if self._cancel_requested:
                     break
-                self.chunk.emit(text)
+                self.chunk.emit(payload)
             self.finished.emit()
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -1192,7 +1330,7 @@ class LexiconEditorDialog(QDialog):
         reply = QMessageBox.question(
             self,
             self.t("reset_confirm_title", "Standard wiederherstellen"),
-            self.t("reset_confirm_text", "Soll das Aussprache-Lexikon auf die Standardwerte zurückgesetzt werden?"),
+            self.t("reset_confirm_text", "Soll die Antwortliste für Fragen auf die Standardwerte zurückgesetzt werden?"),
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -1275,7 +1413,7 @@ class AutoAnswerPhrasesDialog(QDialog):
         reply = QMessageBox.question(
             self,
             self.t("reset_confirm_title", "Standard wiederherstellen"),
-            self.t("reset_confirm_text", "Soll das Aussprache-Lexikon auf die Standardwerte zurückgesetzt werden?")
+            self.t("reset_confirm_text", "Soll die Antwortliste für Fragen auf die Standardwerte zurückgesetzt werden?")
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -1352,7 +1490,7 @@ class AutoAnswerQuestionRepliesDialog(QDialog):
         reply = QMessageBox.question(
             self,
             self.t("reset_confirm_title", "Standard wiederherstellen"),
-            self.t("reset_confirm_text", "Soll das Aussprache-Lexikon auf die Standardwerte zurückgesetzt werden?")
+            self.t("reset_confirm_text", "Soll die Antwortliste für Fragen auf die Standardwerte zurückgesetzt werden?")
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -1594,6 +1732,11 @@ class SettingsDialog(QDialog):
         self.auto_answer_use_question_replies_for_all.setToolTip(self.t("auto_answer_use_question_replies_for_all_tooltip", "Wenn aktiv, dürfen die Antworten aus auto_answer_question_replies.json nicht nur bei Fragen, sondern zusätzlich auch im normalen Auto-Answer-Pool vorkommen. Bei echten Fragen wird diese Liste weiterhin bevorzugt verwendet."))
         self.content_layout.addWidget(self.auto_answer_use_question_replies_for_all)
 
+        self.allow_consecutive_auto_answer_dataset_reuse = QCheckBox(self.t("allow_consecutive_auto_answer_dataset_reuse_label", "Doppelte Verweise nacheinander zulassen"))
+        self.allow_consecutive_auto_answer_dataset_reuse.setChecked(bool(self.config.get("allow_consecutive_auto_answer_dataset_reuse", False)))
+        self.allow_consecutive_auto_answer_dataset_reuse.setToolTip(self.t("allow_consecutive_auto_answer_dataset_reuse_tooltip", "Wenn deaktiviert, werden direkte Wiederholungen derselben Einträge aus auto_answer_phrases.json oder auto_answer_question_replies.json im nächsten Auto-Answer-Turn nach Möglichkeit vermieden."))
+        self.content_layout.addWidget(self.allow_consecutive_auto_answer_dataset_reuse)
+
         lexicon_row = QHBoxLayout()
         self.tts_lexicon = QCheckBox(self.t("tts_lexicon_label", "TTS Aussprache-Lexikon verwenden"))
         self.tts_lexicon.setChecked(bool(self.config.get("tts_lexicon_enabled", self.config.get("windows_sapi_lexicon_enabled", True))))
@@ -1618,6 +1761,11 @@ class SettingsDialog(QDialog):
         self.edit_auto_answer_short_prompt_btn.clicked.connect(self.edit_auto_answer_short_prompt)
         short_answers_row.addWidget(self.edit_auto_answer_short_prompt_btn)
         self.content_layout.addLayout(short_answers_row)
+
+        self.auto_thinking_for_code_requests = QCheckBox(self.t("auto_thinking_for_code_requests_label", "Automatisch zu Thinking Modus wechseln wenn Code erstellt werden soll"))
+        self.auto_thinking_for_code_requests.setChecked(bool(self.config.get("auto_thinking_for_code_requests", True)))
+        self.auto_thinking_for_code_requests.setToolTip(self.t("auto_thinking_for_code_requests_tooltip", "Wenn aktiv, wird bei erkannten Code-Anfragen für kompatible Modelle automatisch Thinking aktiviert und zusätzlich explizit verlangt, den Code wirklich in einem Markdown-Codeblock auszugeben."))
+        self.content_layout.addWidget(self.auto_thinking_for_code_requests)
 
         self.debug_trace_enabled = QCheckBox(self.t("debug_trace_enabled_label", "Detailliertes Debug-Log schreiben"))
         self.debug_trace_enabled.setChecked(bool(self.config.get("debug_trace_enabled", False)))
@@ -1747,7 +1895,7 @@ class SettingsDialog(QDialog):
             self.t("sapi_pitch_label", "Tonhöhe"),
             -10,
             10,
-            int(self.config.get("windows_sapi_pitch", 0)),
+            int(self.config.get("windows_sapi_pitch", 3)),
             self.t("sapi_value_default", "Standard"),
         )
         self.sapi_volume_slider, self.sapi_volume_label_value = self._make_slider_row(
@@ -2020,14 +2168,18 @@ class SettingsDialog(QDialog):
 
         self.autoplay.setChecked(bool(merged.get("autoplay_tts", True)))
         self.auto_read_responses.setChecked(bool(merged.get("auto_read_assistant_responses", True)))
-        self.auto_read_user_inputs.setChecked(bool(merged.get("auto_read_user_inputs", DEFAULT_CONFIG["auto_read_user_inputs"])))
+        self.auto_read_user_inputs.setChecked(bool(merged.get("auto_read_user_inputs", False)))
         self.read_all_include_names.setChecked(bool(merged.get("read_all_include_names", False)))
         self.user_display_name.setText(str(merged.get("user_display_name", "") or ""))
         self.assistant_display_name.setText(str(merged.get("assistant_display_name", "") or ""))
         self.tts_lexicon.setChecked(bool(merged.get("tts_lexicon_enabled", True)))
         self.strip_emojis.setChecked(bool(merged.get("strip_emojis_for_tts", True)))
         self.auto_answer_short_answers.setChecked(bool(merged.get("auto_answer_short_answers", True)))
-        self.auto_answer_use_question_replies_for_all.setChecked(bool(merged.get("auto_answer_use_question_replies_for_all", True)))
+        if hasattr(self, "auto_answer_use_question_replies_for_all"):
+            self.auto_answer_use_question_replies_for_all.setChecked(bool(merged.get("auto_answer_use_question_replies_for_all", True)))
+        if hasattr(self, "allow_consecutive_auto_answer_dataset_reuse"):
+            self.allow_consecutive_auto_answer_dataset_reuse.setChecked(bool(merged.get("allow_consecutive_auto_answer_dataset_reuse", False)))
+        self.auto_thinking_for_code_requests.setChecked(bool(merged.get("auto_thinking_for_code_requests", True)))
         self.debug_trace_enabled.setChecked(bool(merged.get("debug_trace_enabled", False)))
         self.chat_max_tokens.setValue(int(merged.get("chat_max_tokens", DEFAULT_CONFIG["chat_max_tokens"]) or DEFAULT_CONFIG["chat_max_tokens"]))
         self.auto_answer_rounds.setValue(int(merged.get("auto_answer_max_rounds", DEFAULT_CONFIG["auto_answer_max_rounds"]) or DEFAULT_CONFIG["auto_answer_max_rounds"]))
@@ -2036,7 +2188,7 @@ class SettingsDialog(QDialog):
         self.context_limit.setValue(int(merged.get("context_message_limit", DEFAULT_CONFIG["context_message_limit"]) or DEFAULT_CONFIG["context_message_limit"]))
         self.rollover_carry_messages.setValue(int(merged.get("rollover_carry_messages", DEFAULT_CONFIG["rollover_carry_messages"]) or DEFAULT_CONFIG["rollover_carry_messages"]))
         self.sapi_rate_slider.setValue(int(merged.get("windows_sapi_rate", 0) or 0))
-        self.sapi_pitch_slider.setValue(int(merged.get("windows_sapi_pitch", DEFAULT_CONFIG["windows_sapi_pitch"]) or DEFAULT_CONFIG["windows_sapi_pitch"]))
+        self.sapi_pitch_slider.setValue(int(merged.get("windows_sapi_pitch", 0) or 0))
         self.sapi_volume_slider.setValue(int(merged.get("windows_sapi_volume", 100) or 100))
         self.system_prompt.setPlainText(str(merged.get("system_prompt", "") or ""))
 
@@ -2113,7 +2265,11 @@ class SettingsDialog(QDialog):
         data["windows_sapi_lexicon_enabled"] = data["tts_lexicon_enabled"]
         data["strip_emojis_for_tts"] = self.strip_emojis.isChecked()
         data["auto_answer_short_answers"] = self.auto_answer_short_answers.isChecked()
-        data["auto_answer_use_question_replies_for_all"] = self.auto_answer_use_question_replies_for_all.isChecked()
+        if hasattr(self, "auto_answer_use_question_replies_for_all"):
+            data["auto_answer_use_question_replies_for_all"] = self.auto_answer_use_question_replies_for_all.isChecked()
+        if hasattr(self, "allow_consecutive_auto_answer_dataset_reuse"):
+            data["allow_consecutive_auto_answer_dataset_reuse"] = self.allow_consecutive_auto_answer_dataset_reuse.isChecked()
+        data["auto_thinking_for_code_requests"] = self.auto_thinking_for_code_requests.isChecked()
         data["debug_trace_enabled"] = self.debug_trace_enabled.isChecked()
         data["chat_max_tokens"] = int(self.chat_max_tokens.value())
         data["auto_answer_max_rounds"] = int(self.auto_answer_rounds.value())
@@ -2447,7 +2603,7 @@ class MainWindow(QMainWindow):
         self.debug_session_totals: dict[str, dict[str, int]] = {}
         self.current_request_debug_info: dict = {}
 
-        self.setWindowTitle(self._window_title_text())
+        self.setWindowTitle(build_window_title())
         self.audio_error_signal.connect(self._on_audio_error)
         self.audio_status_signal.connect(self._on_audio_status)
         self.audio_feedback_signal.connect(self._on_audio_feedback)
@@ -2455,7 +2611,7 @@ class MainWindow(QMainWindow):
         self._tts_feedback_elapsed_seconds = 0
         self.auto_answer_timer = QTimer(self)
         self.auto_answer_timer.setSingleShot(True)
-        self.auto_answer_timer.timeout.connect(self._on_auto_answer_timer)
+        self.auto_answer_timer.timeout.connect(self._safe_on_auto_answer_timer)
         self.tts_feedback_timer = QTimer(self)
         self.tts_feedback_timer.setInterval(1000)
         self.tts_feedback_timer.timeout.connect(self._tick_tts_feedback_elapsed)
@@ -2507,9 +2663,6 @@ class MainWindow(QMainWindow):
     def t(self, key: str, default: Optional[str] = None) -> str:
         return self.translations.get(key, default or key)
 
-    def _window_title_text(self) -> str:
-        return f"{self.t('app_title', APP_TITLE_BASE)} - {APP_TITLE_DATE}"
-
     def reload_language_pack(self) -> None:
         self.translations = load_language_pack(self.config.get("interface_language", "de"))
     def _debug_config_snapshot(self) -> dict:
@@ -2517,17 +2670,18 @@ class MainWindow(QMainWindow):
             "interface_language": self.config.get("interface_language", "de"),
             "theme": self.config.get("theme", "Midnight"),
             "model": self.model_combo.currentText().strip() if hasattr(self, "model_combo") else self.config.get("last_model", ""),
-            "auto_answer_enabled": bool(self.config.get("auto_answer_enabled", True)),
+            "auto_answer_enabled": bool(self.config.get("auto_answer_enabled", False)),
             "auto_answer_short_answers": bool(self.config.get("auto_answer_short_answers", True)),
             "auto_answer_eliza_share": int(self.config.get("auto_answer_eliza_share", 30) or 30),
             "auto_answer_phrase_repeat_lookback": int(self.config.get("auto_answer_phrase_repeat_lookback", 4) or 4),
             "auto_answer_max_rounds": int(self.config.get("auto_answer_max_rounds", 0) or 0),
-            "chat_max_tokens": int(self.config.get("chat_max_tokens", 1024) or 1024),
+            "chat_max_tokens": int(self.config.get("chat_max_tokens", 512) or 512),
             "context_message_limit": int(self.config.get("context_message_limit", 8) or 8),
             "rollover_carry_messages": int(self.config.get("rollover_carry_messages", AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES) or AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES),
             "tts_backend": self.config.get("tts_backend", "disabled"),
             "auto_read_assistant_responses": bool(self.config.get("auto_read_assistant_responses", True)),
             "auto_read_user_inputs": bool(self.config.get("auto_read_user_inputs", False)),
+            "auto_thinking_for_code_requests": bool(self.config.get("auto_thinking_for_code_requests", True)),
             "debug_trace_enabled": bool(self.config.get("debug_trace_enabled", False)),
         }
 
@@ -2590,7 +2744,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        self.sidebar_title = QLabel(self.t("app_title", APP_TITLE_BASE))
+        self.sidebar_title = QLabel(self.t("app_title", "OllamaVibeDesk"))
         self.sidebar_title.setObjectName("TitleLabel")
         layout.addWidget(self.sidebar_title)
 
@@ -2744,7 +2898,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.tts_feedback_frame)
 
         self.auto_answer_checkbox = QCheckBox(self.t("auto_answer_checkbox", "Auto Answer (ELIZA)"))
-        self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", True)))
+        self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
         self.auto_answer_checkbox.toggled.connect(self._on_auto_answer_toggled)
         layout.addWidget(self.auto_answer_checkbox)
 
@@ -2769,8 +2923,8 @@ class MainWindow(QMainWindow):
         return frame
 
     def refresh_ui_texts(self) -> None:
-        self.setWindowTitle(self._window_title_text())
-        self.sidebar_title.setText(self.t("app_title", APP_TITLE_BASE))
+        self.setWindowTitle(build_window_title())
+        self.sidebar_title.setText(self.t("app_title", "OllamaVibeDesk"))
         self.sidebar_subtitle.setText(self.t("sidebar_subtitle", "Lokale Chats · portable Daten · optionale WAV-Ausgabe"))
         self.new_chat_btn.setText(self.t("new_chat", "Neuer Chat"))
         self.delete_chat_btn.setText(self.t("delete_chat_button", "Löschen"))
@@ -3037,6 +3191,23 @@ class MainWindow(QMainWindow):
         ]
         return items[-lookback:]
 
+    def _recent_auto_answer_dataset_source_keys(self) -> list[str]:
+        if not self.current_session:
+            return []
+        lookback = max(0, int(self.config.get("auto_answer_phrase_repeat_lookback", 4) or 0))
+        if lookback <= 0:
+            return []
+        keys: list[str] = []
+        for message in reversed(self.current_session.messages):
+            if message.role == "user" and bool(getattr(message, "generated", False)):
+                key = str(getattr(message, "auto_answer_source_key", "") or "").strip()
+                if key:
+                    keys.append(key)
+                    if len(keys) >= lookback:
+                        break
+        keys.reverse()
+        return keys
+
     def _session_rollover_threshold(self) -> int:
         limit = int(self.config.get("context_message_limit", AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT) or AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT)
         return max(6, limit)
@@ -3046,11 +3217,11 @@ class MainWindow(QMainWindow):
         return max(2, configured)
 
     def _request_token_budget(self) -> int:
-        max_tokens = max(1, int(self.config.get("chat_max_tokens", 1024) or 1024))
+        max_tokens = max(1, int(self.config.get("chat_max_tokens", 512) or 512))
         return max(AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET, max_tokens * AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR)
 
     def _would_exceed_request_budget(self, messages: list[dict], system_prompt: str) -> bool:
-        projected = estimate_chat_payload_tokens(messages, system_prompt) + max(0, int(self.config.get("chat_max_tokens", 1024) or 1024))
+        projected = estimate_chat_payload_tokens(messages, system_prompt) + max(0, int(self.config.get("chat_max_tokens", 512) or 512))
         return projected > self._request_token_budget()
 
     def _clone_message_for_rollover(self, msg: ChatMessage) -> ChatMessage:
@@ -3061,6 +3232,8 @@ class MainWindow(QMainWindow):
             generated=bool(getattr(msg, "generated", False)),
             audio_path=msg.audio_path,
             display_content=getattr(msg, "display_content", None),
+            auto_answer_source_kind=getattr(msg, "auto_answer_source_kind", None),
+            auto_answer_source_key=getattr(msg, "auto_answer_source_key", None),
         )
 
     def _trim_carry_messages_to_budget(self, messages: list[ChatMessage], system_prompt: str) -> tuple[list[ChatMessage], bool]:
@@ -3162,8 +3335,26 @@ class MainWindow(QMainWindow):
         stored_content = append_hidden_instruction_to_user_text(visible_text, short_instruction) if should_embed else visible_text
         return stored_content, visible_text, should_embed
 
+    def _latest_user_visible_text(self) -> str:
+        for item in reversed(self._request_message_items()):
+            if item.role == "user":
+                return (message_visible_content(item) or item.content or "").strip()
+        return ""
+
+    def _should_use_auto_thinking_for_current_request(self) -> bool:
+        if not bool(self.config.get("auto_thinking_for_code_requests", True)):
+            return False
+        model_name = self.model_combo.currentText().strip().lower()
+        if "qwen3.5:9b" not in model_name and "qwen3.5" not in model_name:
+            return False
+        return text_looks_like_code_request(self._latest_user_visible_text())
+
     def request_system_prompt(self) -> str:
-        return str(self.config.get("system_prompt", "") or "").strip()
+        base_prompt = str(self.config.get("system_prompt", "") or "").strip()
+        if not self._should_use_auto_thinking_for_current_request():
+            return base_prompt
+        extra = code_request_instruction(self.config.get("interface_language", "de"))
+        return f"{base_prompt}\n\n{extra}".strip() if base_prompt else extra
 
     def session_messages_for_api(self) -> List[dict]:
         if not self.current_session:
@@ -3195,12 +3386,12 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.t("auto_answer_enabled", "Auto Answer aktiviert."), 2500)
         self._debug_log("auto_answer_toggled", {"checked": bool(checked)})
 
-    def _append_user_message(self, text: str, generated: bool = False) -> ChatMessage:
+    def _append_user_message(self, text: str, generated: bool = False, auto_answer_source_kind: str = "", auto_answer_source_key: str = "") -> ChatMessage:
         if not self.current_session:
             self.create_new_session()
         self._ensure_safe_session_capacity(additional_messages=2, auto_answer_only=True)
         stored_content, visible_text, embedded_short_instruction = self._build_user_message_content(text)
-        user_message = ChatMessage.now("user", stored_content, generated=generated, display_content=visible_text)
+        user_message = ChatMessage.now("user", stored_content, generated=generated, display_content=visible_text, auto_answer_source_kind=auto_answer_source_kind or None, auto_answer_source_key=auto_answer_source_key or None)
         if generated:
             self.auto_answer_rounds_current += 1
         else:
@@ -3225,6 +3416,8 @@ class MainWindow(QMainWindow):
             "stored_content": stored_content,
             "hidden_instruction_embedded": bool(embedded_short_instruction),
             "message_created_at": user_message.created_at,
+            "auto_answer_source_kind": auto_answer_source_kind,
+            "auto_answer_source_key": auto_answer_source_key,
         })
         return user_message
 
@@ -3238,6 +3431,7 @@ class MainWindow(QMainWindow):
             system_prompt=system_prompt,
         )
         system_prompt = self.request_system_prompt()
+        think_mode = self._should_use_auto_thinking_for_current_request()
         selected_model = self.model_combo.currentText().strip()
         previous_model = (self.last_requested_model or "").strip()
         assistant_message = ChatMessage.now("assistant", "")
@@ -3250,6 +3444,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         self.current_assistant_text = ""
+        self.current_assistant_thinking = ""
         self.last_requested_model = selected_model
 
         messages = self.session_messages_for_api()
@@ -3259,14 +3454,16 @@ class MainWindow(QMainWindow):
             "messages": messages,
             "system_prompt": system_prompt,
             "request_prompt_tokens_estimated": request_prompt_tokens,
-            "response_max_tokens": int(self.config.get("chat_max_tokens", 1024) or 1024),
-            "request_total_budget_estimated": request_prompt_tokens + int(self.config.get("chat_max_tokens", 1024) or 1024),
+            "response_max_tokens": int(self.config.get("chat_max_tokens", 512) or 512),
+            "request_total_budget_estimated": request_prompt_tokens + int(self.config.get("chat_max_tokens", 512) or 512),
+            "think_mode": bool(think_mode),
+            "latest_user_text": self._latest_user_visible_text(),
         }
         self.current_request_consumes_rollover_short_instruction = False
         self._debug_log("request_prepared", {"request": dict(self.current_request_debug_info)})
         self._set_request_feedback("sent")
         self._flush_chat_ui()
-        self.start_worker(messages, system_prompt)
+        self.start_worker(messages, system_prompt, think_mode)
         self.stop_btn.setEnabled(True)
         self._set_request_feedback("waiting")
 
@@ -3285,6 +3482,22 @@ class MainWindow(QMainWindow):
         self.auto_answer_timer.start(1200)
         self.statusBar().showMessage(self.t("auto_answer_scheduled", "Automatische Antwort wird vorbereitet …"), 2000)
 
+    def _safe_on_auto_answer_timer(self) -> None:
+        try:
+            self._on_auto_answer_timer()
+        except Exception as exc:
+            self.auto_answer_timer.stop()
+            self.pending_auto_answer_source = ""
+            self.pending_auto_submit_message = None
+            self.auto_answer_waiting_for_user_audio = False
+            self.context_retry_in_progress = False
+            try:
+                self._debug_log("auto_answer_timer_exception", {"error": str(exc), "traceback": traceback.format_exc()})
+            except Exception:
+                pass
+            self.statusBar().showMessage(self.t("auto_answer_timer_failed", "Auto-Answer wurde wegen eines internen Fehlers gestoppt."), 5000)
+
+
     def _on_auto_answer_timer(self) -> None:
         if not self.auto_answer_checkbox.isChecked():
             return
@@ -3293,26 +3506,31 @@ class MainWindow(QMainWindow):
         if self.input_box.toPlainText().strip():
             return
         phrase_data = load_auto_answer_data()
-        question_reply_data = load_auto_answer_question_reply_data()
         if isinstance(phrase_data, dict) and phrase_data.get("enabled", True) is False:
             return
-        auto_text = generate_auto_answer(
+        question_reply_data = load_auto_answer_question_reply_data()
+        auto_result = generate_auto_answer(
             self.pending_auto_answer_source,
             self.config.get("interface_language", "de"),
             phrase_data,
             question_reply_data,
             recent_generated_user_messages=self._auto_answer_recent_generated_user_messages(),
+            recent_dataset_source_keys=self._recent_auto_answer_dataset_source_keys(),
             eliza_share_percent=int(self.config.get("auto_answer_eliza_share", 30) or 30),
             use_question_replies_for_all=bool(self.config.get("auto_answer_use_question_replies_for_all", True)),
+            allow_consecutive_dataset_reuse=bool(self.config.get("allow_consecutive_auto_answer_dataset_reuse", False)),
         )
+        auto_text = str(auto_result.get("text", "") or "").strip()
         if not auto_text:
             return
         self._debug_log("auto_answer_generated", {
             "source_text": self.pending_auto_answer_source,
             "generated_text": auto_text,
+            "auto_answer_source_kind": auto_result.get("source_kind", ""),
+            "auto_answer_source_key": auto_result.get("source_key", ""),
         })
         self.pending_auto_answer_source = ""
-        message = self._append_user_message(auto_text, generated=True)
+        message = self._append_user_message(auto_text, generated=True, auto_answer_source_kind=str(auto_result.get("source_kind", "") or ""), auto_answer_source_key=str(auto_result.get("source_key", "") or ""))
         self.pending_auto_submit_message = message
         self.auto_answer_waiting_for_user_audio = True
         if self.config.get("tts_backend", "disabled") == "disabled":
@@ -3339,14 +3557,15 @@ class MainWindow(QMainWindow):
         if self.config.get("auto_read_user_inputs", False) and self.config.get("tts_backend", "disabled") != "disabled":
             self.read_aloud_message(user_message, show_disabled_message=False, allow_autoplay=True)
 
-    def start_worker(self, messages: List[dict], system_prompt: str) -> None:
+    def start_worker(self, messages: List[dict], system_prompt: str, think_mode: bool = False) -> None:
         self.worker_thread = QThread(self)
         self.worker = ChatWorker(
             base_url=self.config.get("ollama_base_url", "http://127.0.0.1:11434").strip(),
             model_name=self.model_combo.currentText().strip(),
             messages=messages,
             system_prompt=system_prompt,
-            max_tokens=int(self.config.get("chat_max_tokens", 1024) or 1024),
+            max_tokens=int(self.config.get("chat_max_tokens", 512) or 512),
+            think_mode=think_mode,
         )
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.started.connect(self.worker.run)
@@ -3359,10 +3578,21 @@ class MainWindow(QMainWindow):
         self.send_btn.setEnabled(False)
         self.worker_thread.start()
 
-    def on_worker_chunk(self, text: str) -> None:
-        self.current_assistant_text += text
+    def on_worker_chunk(self, payload: object) -> None:
+        content = ''
+        thinking = ''
+        if isinstance(payload, dict):
+            content = str(payload.get('content', '') or '')
+            thinking = str(payload.get('thinking', '') or '')
+        else:
+            content = str(payload or '')
+        if content:
+            self.current_assistant_text += content
+        if thinking:
+            self.current_assistant_thinking += thinking
         if self.current_assistant_bubble is not None:
-            self.current_assistant_bubble.set_content(self.current_assistant_text)
+            visible_text = build_assistant_visible_content(self.current_assistant_text, self.current_assistant_thinking)
+            self.current_assistant_bubble.set_content(visible_text, stored_text=self.current_assistant_text)
         self._set_request_feedback("streaming")
         self._flush_chat_ui()
 
@@ -3370,14 +3600,16 @@ class MainWindow(QMainWindow):
         self.stop_btn.setEnabled(False)
         self.send_btn.setEnabled(True)
         self.context_retry_in_progress = False
-        final_text = self.current_assistant_text.strip()
+        final_text = normalize_markdown_code_fences(strip_thinking_tags(self.current_assistant_text), close_unfinished=True).strip()
         if not final_text:
             final_text = 'Keine Textantwort von Ollama empfangen. Bitte Modell/Prompt prüfen oder erneut senden.'
-            if self.current_assistant_bubble is not None:
-                self.current_assistant_bubble.set_content(final_text)
+        final_visible_text = build_assistant_visible_content(final_text, self.current_assistant_thinking)
+        if self.current_assistant_bubble is not None:
+            self.current_assistant_bubble.set_content(final_visible_text, stored_text=final_text)
         assistant_message = None
         if self.current_session and self.current_session.messages:
             self.current_session.messages[-1].content = final_text
+            self.current_session.messages[-1].display_content = final_visible_text
             assistant_message = self.current_session.messages[-1]
             self.store.save(self.current_session)
             self.refresh_sessions_ui()
@@ -3406,6 +3638,8 @@ class MainWindow(QMainWindow):
         self._debug_log("request_finished", {
             "request": dict(self.current_request_debug_info),
             "assistant_text": final_text,
+            "assistant_thinking": self.current_assistant_thinking,
+            "assistant_visible_text": final_visible_text,
             "completion_tokens_estimated": completion_tokens,
             "saved_code_paths": [str(path) for path in self.last_saved_code_paths],
             "auto_read_assistant": bool(auto_read),
@@ -3480,7 +3714,7 @@ class MainWindow(QMainWindow):
         bar.setValue(bar.maximum())
 
     def _prepare_tts_text(self, message: ChatMessage) -> str:
-        original_text = message_visible_content(message).strip()
+        original_text = (message.content if message.role == "assistant" else message_visible_content(message)).strip()
         text = markdown_to_tts_text(original_text)
         if self.config.get("tts_lexicon_enabled", self.config.get("windows_sapi_lexicon_enabled", True)):
             text = apply_sapi_lexicon(text, load_sapi_lexicon())
@@ -3550,7 +3784,7 @@ class MainWindow(QMainWindow):
             model=self.config.get("tts_model", "tts-1-hd"),
             audio_format='wav',
             windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-            windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 3)),
+            windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
             windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
             windows_sapi_language=self.current_sapi_language_tag(),
         )
@@ -3631,7 +3865,7 @@ class MainWindow(QMainWindow):
                         model=self.config.get("tts_model", "tts-1-hd"),
                         audio_format='wav',
                         windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 3)),
+                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
                         windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
                         windows_sapi_language=self.current_sapi_language_tag(),
                     )
@@ -3729,7 +3963,7 @@ class MainWindow(QMainWindow):
                         model=self.config.get("tts_model", "tts-1-hd"),
                         audio_format='wav',
                         windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 3)),
+                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
                         windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
                         windows_sapi_language=self.current_sapi_language_tag(),
                     )
@@ -3798,7 +4032,7 @@ class MainWindow(QMainWindow):
         for message in self.current_session.messages:
             role_label = resolve_display_name(self.config, message.role)
             msg_class = 'assistant' if message.role == 'assistant' else 'user'
-            rendered = markdown.markdown(message.content if message.role == 'assistant' else html.escape(message_visible_content(message)), extensions=['fenced_code', 'tables'])
+            rendered = markdown.markdown(message_visible_content(message) if message.role == 'assistant' else html.escape(message_visible_content(message)), extensions=['fenced_code', 'tables'])
             body_parts.append(f"<div class='msg {msg_class}'><div class='msgmeta'>{html.escape(role_label)} · {html.escape(pretty_timestamp(message.created_at))}</div>{rendered}</div>")
         body_parts.append('</body></html>')
         html_doc = ''.join(body_parts)
@@ -3992,7 +4226,7 @@ class MainWindow(QMainWindow):
             self.config, _ = resolve_tts_voice_config_defaults(self.config)
             debug_log_created = self.debug_logger.set_enabled(bool(self.config.get("debug_trace_enabled", False)))
             save_config(self.config)
-            self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", True)))
+            self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
 
             lang_changed = old_lang != self.config.get("interface_language", "de")
             theme_changed = old_theme != self.config.get("theme", "Midnight")
