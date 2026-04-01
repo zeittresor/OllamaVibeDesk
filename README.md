@@ -55,6 +55,8 @@ The Full installation including vibevoice is taking ~ 3 GB in total (just wait t
 
 Note: Even if the auto-answer mode is active you can send a prompt of your own to the current dialog, it will be used as the next prompt after the current and the ELIZA / Random Answer mode continue to work after that. Btw. if a dialog is getting too long the App will automaticly switch to a new chat but it will take some dialogs from the previous chat to new one that holds the context straight in flow (there are many options in the settings to modify the behave).
 
+btw. the idea and description for the new project https://github.com/zeittresor/dark_matrix (Firefox Matrix-Syle extension working locally) is 99% created by the output of a (single) whole night while sleeping :-)
+
 ## Requirements
 
 - Windows 10/11
