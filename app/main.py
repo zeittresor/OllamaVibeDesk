@@ -779,8 +779,9 @@ def _unique_auto_answer_candidates(candidates: list[tuple[str, str]], blocked_re
     blocked_sources = {str(item or "").strip() for item in (blocked_source_keys or []) if str(item or "").strip()}
     result: list[tuple[str, str]] = []
     seen_texts: set[str] = set()
-    seen_source_keys: set[str] = set()
-    for phrase, source_key in candidates:
+    shuffled_candidates = list(candidates)
+    random.shuffle(shuffled_candidates)
+    for phrase, source_key in shuffled_candidates:
         cleaned = str(phrase or "").strip()
         normalized = _normalize_compare_text(cleaned)
         key = str(source_key or "").strip()
@@ -788,11 +789,7 @@ def _unique_auto_answer_candidates(candidates: list[tuple[str, str]], blocked_re
             continue
         if key and not allow_consecutive_dataset_reuse and key in blocked_sources:
             continue
-        if key and key in seen_source_keys:
-            continue
         seen_texts.add(normalized)
-        if key:
-            seen_source_keys.add(key)
         result.append((cleaned, key))
     return result
 
