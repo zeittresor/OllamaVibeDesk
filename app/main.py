@@ -160,6 +160,38 @@ def split_tts_sentences(text: str) -> List[str]:
     return parts or [normalized.strip()]
 
 
+def render_plain_text_html(text: str) -> str:
+    escaped = html.escape(text or "")
+    return """
+    <style>
+        body { font-family: 'Segoe UI', 'Inter', sans-serif; line-height: 1.45; margin: 0; padding: 0 0 8px 0; }
+        pre { white-space: pre-wrap; word-wrap: break-word; background: rgba(0,0,0,0.18); padding: 10px; border-radius: 10px; margin: 0; }
+    </style>
+    <pre>""" + escaped + "</pre>"
+
+
+def prepare_text_for_browser(text: str) -> tuple[str, bool]:
+    raw = str(text or "")
+    if not raw:
+        return "", False
+    lines = raw.splitlines()
+    truncated = False
+    if len(lines) > MAX_BROWSER_TEXT_LINES:
+        raw = "\n".join(lines[:MAX_BROWSER_TEXT_LINES])
+        truncated = True
+    if len(raw) > MAX_BROWSER_TEXT_CHARS:
+        raw = raw[:MAX_BROWSER_TEXT_CHARS]
+        truncated = True
+    if truncated:
+        raw = raw.rstrip() + "\n\n[Anzeige gekürzt – voller Inhalt bleibt intern gespeichert.]"
+    return raw, truncated
+
+
+def should_use_safe_plain_render(text: str) -> bool:
+    raw = str(text or "")
+    return len(raw) > MAX_MARKDOWN_RENDER_CHARS or raw.count("\n") > MAX_MARKDOWN_RENDER_LINES
+
+
 def load_sapi_lexicon() -> dict:
     ensure_directories()
     try:
@@ -218,8 +250,11 @@ def apply_sapi_lexicon(text: str, lexicon: dict | None) -> str:
 
 
 def message_content_to_html(text: str, is_assistant: bool) -> str:
-    safe_text = text if is_assistant else html.escape(text)
-    html_text = markdown.markdown(safe_text, extensions=["fenced_code", "tables"])
+    raw_text = normalize_markdown_code_fences(str(text or ""), close_unfinished=True) if is_assistant else str(text or "")
+    browser_text, _truncated = prepare_text_for_browser(raw_text)
+    if should_use_safe_plain_render(browser_text):
+        return render_plain_text_html(browser_text)
+    safe_text = browser_text if is_assistant else html.escape(browser_text)
     css = """
     <style>
         body { font-family: 'Segoe UI', 'Inter', sans-serif; line-height: 1.5; margin: 0; padding: 0 0 8px 0; }
@@ -234,7 +269,12 @@ def message_content_to_html(text: str, is_assistant: bool) -> str:
         th, td { padding: 4px 8px; }
     </style>
     """
-    return css + html_text
+    try:
+        html_text = markdown.markdown(safe_text, extensions=["fenced_code", "tables"])
+        return css + html_text
+    except Exception:
+        traceback.print_exc()
+        return render_plain_text_html(browser_text)
 
 
 def load_auto_answer_data() -> dict:
@@ -272,9 +312,15 @@ AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
 AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 5
 AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
 AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
-APP_VERSION = "v1.8"
+APP_VERSION = "v1.9"
 APP_TITLE_WITH_VERSION = f"OllamaVibeDesk {APP_VERSION}"
-APP_WINDOW_DATE = "2026-04-01"
+APP_WINDOW_DATE = "2026-04-04"
+MAX_MARKDOWN_RENDER_CHARS = 120000
+MAX_MARKDOWN_RENDER_LINES = 2500
+MAX_BROWSER_TEXT_CHARS = 180000
+MAX_BROWSER_TEXT_LINES = 6000
+STREAM_RENDER_INTERVAL_SECONDS = 0.12
+STREAM_RENDER_MIN_DELTA_CHARS = 160
 
 
 def nearest_token_preset_index(value: int) -> int:
@@ -1230,10 +1276,20 @@ class BubbleWidget(QFrame):
             self.message.content = stored_text if stored_text is not None else text
         else:
             self.message.display_content = text
-        has_visible_text = bool(text.strip())
+        has_visible_text = bool(str(text or '').strip())
         if self.is_assistant and has_visible_text:
             self.set_loading(False)
-        self.browser.setHtml(message_content_to_html(text, self.is_assistant))
+        browser_text, _truncated = prepare_text_for_browser(text)
+        try:
+            self.browser.setHtml(message_content_to_html(browser_text, self.is_assistant))
+        except Exception:
+            traceback.print_exc()
+            try:
+                self.browser.setPlainText(browser_text)
+            except Exception:
+                traceback.print_exc()
+                fallback = browser_text[:12000] if len(browser_text) > 12000 else browser_text
+                self.browser.setPlainText(fallback)
         self._update_browser_height()
         QTimer.singleShot(0, self._update_browser_height)
 
@@ -3445,6 +3501,8 @@ class MainWindow(QMainWindow):
                 pass
         self.current_assistant_text = ""
         self.current_assistant_thinking = ""
+        self._last_stream_render_at = 0.0
+        self._last_stream_render_chars = 0
         self.last_requested_model = selected_model
 
         messages = self.session_messages_for_api()
@@ -3578,23 +3636,44 @@ class MainWindow(QMainWindow):
         self.send_btn.setEnabled(False)
         self.worker_thread.start()
 
-    def on_worker_chunk(self, payload: object) -> None:
-        content = ''
-        thinking = ''
-        if isinstance(payload, dict):
-            content = str(payload.get('content', '') or '')
-            thinking = str(payload.get('thinking', '') or '')
-        else:
-            content = str(payload or '')
-        if content:
-            self.current_assistant_text += content
-        if thinking:
-            self.current_assistant_thinking += thinking
-        if self.current_assistant_bubble is not None:
+    def _maybe_render_streaming_assistant_content(self, force: bool = False) -> None:
+        if self.current_assistant_bubble is None:
+            return
+        total_chars = len(self.current_assistant_text) + len(self.current_assistant_thinking)
+        now = monotonic()
+        if not force:
+            if total_chars - self._last_stream_render_chars < STREAM_RENDER_MIN_DELTA_CHARS and (now - self._last_stream_render_at) < STREAM_RENDER_INTERVAL_SECONDS:
+                return
+        try:
             visible_text = build_assistant_visible_content(self.current_assistant_text, self.current_assistant_thinking)
             self.current_assistant_bubble.set_content(visible_text, stored_text=self.current_assistant_text)
-        self._set_request_feedback("streaming")
-        self._flush_chat_ui()
+            self._last_stream_render_at = now
+            self._last_stream_render_chars = total_chars
+        except Exception:
+            traceback.print_exc()
+
+    def on_worker_chunk(self, payload: object) -> None:
+        try:
+            content = ''
+            thinking = ''
+            if isinstance(payload, dict):
+                content = str(payload.get('content', '') or '')
+                thinking = str(payload.get('thinking', '') or '')
+            else:
+                content = str(payload or '')
+            if content:
+                self.current_assistant_text += content
+            if thinking:
+                self.current_assistant_thinking += thinking
+            self._maybe_render_streaming_assistant_content(force=False)
+            self._set_request_feedback("streaming")
+            total_chars = len(self.current_assistant_text) + len(self.current_assistant_thinking)
+            if (total_chars - self._last_stream_render_chars) >= STREAM_RENDER_MIN_DELTA_CHARS:
+                self._flush_chat_ui()
+        except Exception:
+            traceback.print_exc()
+            self._set_request_feedback("streaming")
+
 
     def on_worker_finished(self) -> None:
         self.stop_btn.setEnabled(False)
@@ -3605,7 +3684,15 @@ class MainWindow(QMainWindow):
             final_text = 'Keine Textantwort von Ollama empfangen. Bitte Modell/Prompt prüfen oder erneut senden.'
         final_visible_text = build_assistant_visible_content(final_text, self.current_assistant_thinking)
         if self.current_assistant_bubble is not None:
-            self.current_assistant_bubble.set_content(final_visible_text, stored_text=final_text)
+            try:
+                self.current_assistant_bubble.set_content(final_visible_text, stored_text=final_text)
+            except Exception:
+                traceback.print_exc()
+                try:
+                    safe_visible_text, _ = prepare_text_for_browser(final_visible_text)
+                    self.current_assistant_bubble.set_content(safe_visible_text, stored_text=final_text)
+                except Exception:
+                    traceback.print_exc()
         assistant_message = None
         if self.current_session and self.current_session.messages:
             self.current_session.messages[-1].content = final_text
