@@ -41,7 +41,7 @@ Extract the archive (or clone the repository) to a new folder ex. c:\AI\OllamaVi
 
 If you dont break it it should start the GUI automaticly after installation (in the other case start the GUI using run_windows.bat)
 
-If you a from germany and want native german language you dont have to do anything for a first test, just go to the prompt field and enter something like "Erklär mir Mandelbrot Grafiken." then press send (or ctrl/strg + enter) and listen to the endless automatic dialog.
+If you a from germany and want native german language you dont have to do anything for a first test, just go to the prompt field and enter something like "erstell ein 3d Maze erkundungs-Spiel das man mit WSAD und der maus steuern kann aus der ego perspektive" then press send (or ctrl/strg + enter) and listen to the endless automatic dialog.
 
 If you are from a different country or want a different language go to settings (einstellungen) and select language (sprache) to select it. (save the config after that). Now back in the Main window enter something in the prompt box like "How old is the Towerwatch in London."
 
