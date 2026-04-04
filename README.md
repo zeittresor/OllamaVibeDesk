@@ -15,10 +15,10 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **t
 - optional WAV export via a local TTS endpoint
 - Windows installer and launcher batch files
 - no cloud requirement for normal chat usage once local services are present
-- multiple language support (currently: german, english, french, spanish, russian)
+- multiple language support (currently: german, english, french, spanish, russian and some more..)
 - different voice output speakers for human and AI
 - auto answer function to act like the human based of the ELIZA algorythm to automaticly continue a chat dialog
-- automatic code generating based upon the dialogs in the auto-answer mode (Python, c#, php) (in subfolder ..\app_data\generated_code)
+- automatic code generating based upon the dialogs in the auto-answer mode (Python, c#, php, html, what ever..) (in subfolder ..\app_data\generated_code)
 - works 100 % offline after installation - you can pull the plug and select a matrix like theme :-)
 
 ## Example with SAPi output (german language)
