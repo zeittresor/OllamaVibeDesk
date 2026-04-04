@@ -53,7 +53,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "user_display_name": "",
     "assistant_display_name": "",
     "strip_emojis_for_tts": True,
-    "chat_max_tokens": 1024,
+    "chat_max_tokens": 8192,
     "auto_answer_max_rounds": 0,
     "context_message_limit": 8,
     "auto_answer_short_answers": True,

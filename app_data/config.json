@@ -24,7 +24,7 @@
   "tts_voice_defaults_initialized": false,
   "auto_read_user_inputs": true,
   "strip_emojis_for_tts": true,
-  "chat_max_tokens": 1024,
+  "chat_max_tokens": 8192,
   "auto_answer_max_rounds": 0,
   "context_message_limit": 8,
   "auto_answer_short_answers": true,

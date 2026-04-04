@@ -307,12 +307,12 @@ def default_role_names(language_code: str) -> tuple[str, str]:
     return mapping.get(code, mapping["en"])
 
 
-TOKEN_PRESET_VALUES = [64, 128, 256, 512, 1024, 2048, 4096, 8192]
+TOKEN_PRESET_VALUES = [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144]
 AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
 AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 5
 AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
 AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
-APP_VERSION = "v1.9"
+APP_VERSION = "v1.10"
 APP_TITLE_WITH_VERSION = f"OllamaVibeDesk {APP_VERSION}"
 APP_WINDOW_DATE = "2026-04-04"
 MAX_MARKDOWN_RENDER_CHARS = 120000
@@ -1841,7 +1841,7 @@ class SettingsDialog(QDialog):
         self.chat_max_tokens = QSpinBox()
         self.chat_max_tokens.setRange(TOKEN_PRESET_VALUES[0], TOKEN_PRESET_VALUES[-1])
         self.chat_max_tokens.setSingleStep(64)
-        self.chat_max_tokens.setValue(int(self.config.get("chat_max_tokens", 1024) or 1024))
+        self.chat_max_tokens.setValue(int(self.config.get("chat_max_tokens", 8192) or 8192))
         self.chat_max_tokens.setToolTip(self.t("chat_max_tokens_tooltip", "Begrenzt die maximale Antwortlänge des LLM. Kleinere Werte können lange Auto-Answer-Schleifen stabiler machen."))
         token_label_row.addWidget(self.chat_max_tokens)
         limits_layout.addLayout(token_label_row)
@@ -1859,7 +1859,7 @@ class SettingsDialog(QDialog):
         self.chat_max_tokens_slider.setValue(nearest_token_preset_index(self.chat_max_tokens.value()))
         token_slider_row.addWidget(self.chat_max_tokens_slider, 1)
         self.chat_max_tokens_slider_value = QLabel()
-        self.chat_max_tokens_slider_value.setMinimumWidth(70)
+        self.chat_max_tokens_slider_value.setMinimumWidth(90)
         self.chat_max_tokens_slider_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         token_slider_row.addWidget(self.chat_max_tokens_slider_value)
         limits_layout.addLayout(token_slider_row)
