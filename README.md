@@ -1,6 +1,6 @@
 # OllamaVibeDesk
 
-Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **theme support**, **chat history**, **streaming responses**, and optional **local TTS playback/export** through Windows SAPI or a **VibeVoice compatible build-in server**.
+Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **automatich answer function**, **different speakers**, **streaming responses**, and optional **local TTS playback/export** through Windows SAPI or a **VibeVoice compatible build-in server**.
 
 
 ## Main features
