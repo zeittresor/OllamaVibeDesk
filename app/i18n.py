@@ -24,15 +24,32 @@ def available_languages() -> List[Tuple[str, str]]:
 
 
 def load_language_pack(code: str) -> Dict[str, str]:
-    for candidate in [code or '', 'de', 'en']:
-        if not candidate:
-            continue
-        path = LANG_DIR / f'{candidate}.json'
+    merged: Dict[str, str] = {}
+    base_path = LANG_DIR / 'en.json'
+    if base_path.exists():
+        try:
+            data = json.loads(base_path.read_text(encoding='utf-8'))
+            if isinstance(data, dict):
+                merged.update({str(k): str(v) for k, v in data.items()})
+        except Exception:
+            pass
+    selected = (code or '').strip()
+    if selected:
+        path = LANG_DIR / f'{selected}.json'
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding='utf-8'))
                 if isinstance(data, dict):
-                    return {str(k): str(v) for k, v in data.items()}
+                    merged.update({str(k): str(v) for k, v in data.items()})
             except Exception:
-                continue
-    return {}
+                pass
+    if not merged:
+        fallback = LANG_DIR / 'de.json'
+        if fallback.exists():
+            try:
+                data = json.loads(fallback.read_text(encoding='utf-8'))
+                if isinstance(data, dict):
+                    merged.update({str(k): str(v) for k, v in data.items()})
+            except Exception:
+                pass
+    return merged

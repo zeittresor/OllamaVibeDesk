@@ -21,6 +21,7 @@ EXPORTS_DIR = APP_DATA_DIR / "exports"
 GENERATED_CODE_DIR = APP_DATA_DIR / "generated_code"
 DEBUG_LOG_DIR = APP_DATA_DIR / "debug_logs"
 SETTINGS_PROFILE_DIR = APP_DATA_DIR / "config_profiles"
+KNOWLEDGE_DIR = APP_DATA_DIR / "knowledge_base"
 TTS_DIR = APP_DATA_DIR / "tts"
 LANG_DIR = APP_ROOT / "lang"
 SAPI_LEXICON_PATH = TTS_DIR / "sapi_lexicon.json"
@@ -30,6 +31,7 @@ CONFIG_PATH = APP_DATA_DIR / "config.json"
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "ollama_base_url": "http://127.0.0.1:11434",
+    "ollama_executable_path": "",
     "tts_backend": "windows_sapi",
     "tts_base_url": "http://127.0.0.1:8880/v1",
     "tts_voice": "",
@@ -66,6 +68,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "auto_thinking_for_code_requests": True,
     "auto_answer_use_question_replies_for_all": True,
     "allow_consecutive_auto_answer_dataset_reuse": False,
+    "persistent_knowledge_enabled": False,
+    "knowledge_source_path": "",
+    "knowledge_retrieval_limit": 5,
+    "knowledge_auto_capture_chats": True,
 }
 
 
@@ -517,6 +523,7 @@ def ensure_directories() -> None:
     GENERATED_CODE_DIR.mkdir(parents=True, exist_ok=True)
     DEBUG_LOG_DIR.mkdir(parents=True, exist_ok=True)
     SETTINGS_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
     TTS_DIR.mkdir(parents=True, exist_ok=True)
     LANG_DIR.mkdir(parents=True, exist_ok=True)
     ensure_default_sapi_lexicon()

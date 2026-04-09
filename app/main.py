@@ -9,10 +9,12 @@ import sys
 import traceback
 import uuid
 import threading
+import shutil
 import random
 from datetime import datetime
 from time import monotonic
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Callable, List, Optional
 
 import markdown
@@ -26,6 +28,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QGridLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -43,6 +46,7 @@ from PyQt6.QtWidgets import (
     QSlider,
     QSpinBox,
     QTextBrowser,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -50,13 +54,14 @@ from PyQt6.QtWidgets import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, DEBUG_LOG_DIR, SETTINGS_PROFILE_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, AUTO_ANSWER_QUESTION_REPLY_PATH, DEFAULT_CONFIG, load_config, save_config, ensure_directories
+from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, DEBUG_LOG_DIR, SETTINGS_PROFILE_DIR, KNOWLEDGE_DIR, SAPI_LEXICON_PATH, AUTO_ANSWER_PATH, AUTO_ANSWER_QUESTION_REPLY_PATH, DEFAULT_CONFIG, load_config, save_config, ensure_directories
 from app.models import ChatMessage, ChatSession
 from app.ollama_client import OllamaClient
 from app.themes import THEMES
 from app.tts_client import TTSClient
 from app.tts_setup import VibeVoiceManager
 from app.i18n import available_languages, load_language_pack
+from app.knowledge import LocalKnowledgeBase
 
 
 def normalize_markdown_code_fences(text: str, close_unfinished: bool = False) -> str:
@@ -312,9 +317,9 @@ AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
 AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 5
 AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
 AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
-APP_VERSION = "v1.12"
+APP_VERSION = "v1.16"
 APP_TITLE_WITH_VERSION = f"OllamaVibeDesk {APP_VERSION}"
-APP_WINDOW_DATE = "2026-04-04"
+APP_WINDOW_DATE = "2026-04-09"
 MAX_MARKDOWN_RENDER_CHARS = 120000
 MAX_MARKDOWN_RENDER_LINES = 2500
 MAX_BROWSER_TEXT_CHARS = 180000
@@ -1966,6 +1971,60 @@ class SettingsDialog(QDialog):
         self.system_prompt.setFixedHeight(110)
         add_row(self.t("system_prompt_label", "System-Prompt"), self.system_prompt)
 
+        self.persistent_knowledge_enabled = QCheckBox(self.t("persistent_knowledge_enabled_label", "Permanentes Langzeitgedächtnis / chatübergreifendes RAG aktiv"))
+        self.persistent_knowledge_enabled.setChecked(bool(self.config.get("persistent_knowledge_enabled", False)))
+        self.persistent_knowledge_enabled.setToolTip(self.t("persistent_knowledge_enabled_tooltip", "Wenn aktiv, kann die App Dateien, Medien-Referenzen und Chat-Erinnerungen dauerhaft als lokalen Wissenskontext verwenden."))
+        self.content_layout.addWidget(self.persistent_knowledge_enabled)
+
+        self.knowledge_source_path = QLineEdit(str(self.config.get("knowledge_source_path", "") or ""))
+        self.knowledge_source_path.setPlaceholderText(self.t("knowledge_source_path_placeholder", "Noch keine lokale Wissensquelle verknüpft"))
+        self.knowledge_source_path.setReadOnly(True)
+        add_row(self.t("knowledge_source_path_label", "Verknüpfte lokale Wissensquelle"), self.knowledge_source_path)
+
+        knowledge_limit_row = QHBoxLayout()
+        knowledge_limit_row.addWidget(QLabel(self.t("knowledge_retrieval_limit_label", "Wie viele passende Wissenseinträge pro Anfrage maximal selektiv abgerufen werden")), 1)
+        self.knowledge_retrieval_limit = QSpinBox()
+        self.knowledge_retrieval_limit.setRange(1, 12)
+        self.knowledge_retrieval_limit.setValue(int(self.config.get("knowledge_retrieval_limit", 5) or 5))
+        knowledge_limit_row.addWidget(self.knowledge_retrieval_limit)
+        self.content_layout.addLayout(knowledge_limit_row)
+
+        self.knowledge_auto_capture_chats = QCheckBox(self.t("knowledge_auto_capture_chats_label", "Manuell geführte Dialoge automatisch als Langzeitgedächtnis parken"))
+        self.knowledge_auto_capture_chats.setChecked(bool(self.config.get("knowledge_auto_capture_chats", True)))
+        self.knowledge_auto_capture_chats.setToolTip(self.t("knowledge_auto_capture_chats_tooltip", "Wenn aktiv, werden manuell geführte Nutzer-Assistent-Austausche zusätzlich in den lokalen Wissensspeicher übernommen, damit sie später selektiv wieder abrufbar sind."))
+        self.content_layout.addWidget(self.knowledge_auto_capture_chats)
+
+        knowledge_buttons_grid = QGridLayout()
+        knowledge_buttons_grid.setHorizontalSpacing(8)
+        knowledge_buttons_grid.setVerticalSpacing(8)
+        self.choose_knowledge_source_btn = QPushButton(self.t("choose_knowledge_source", "Wissensquelle verbinden …"))
+        self.choose_knowledge_source_btn.setToolTip(self.t("choose_knowledge_source_tooltip", "Bestehenden lokalen Wissensordner oder eine bereits vorhandene lokale Wiki-Struktur mit der App verknüpfen."))
+        self.choose_knowledge_source_btn.clicked.connect(self.choose_knowledge_source)
+        self.create_knowledge_source_btn = QPushButton(self.t("create_knowledge_source", "Wissensquelle anlegen …"))
+        self.create_knowledge_source_btn.setToolTip(self.t("create_knowledge_source_tooltip", "Neue lokale Wissensquelle anlegen und dabei nach Möglichkeit automatisch eine blanke lokale TiddlyWiki-Datei als brain.html aus dem Cache bereitstellen."))
+        self.create_knowledge_source_btn.clicked.connect(self.create_knowledge_source)
+        self.open_knowledge_source_btn = QPushButton(self.t("open_knowledge_source", "Wissensquelle öffnen"))
+        self.open_knowledge_source_btn.setToolTip(self.t("open_knowledge_source_tooltip", "Wenn vorhanden, die lokale brain.html der Wissensquelle öffnen, sonst den verknüpften Wissensordner im Dateimanager öffnen."))
+        self.open_knowledge_source_btn.clicked.connect(self.open_knowledge_source)
+        self.unlink_knowledge_source_btn = QPushButton(self.t("unlink_knowledge_source", "Quelle entkoppeln"))
+        self.unlink_knowledge_source_btn.setToolTip(self.t("unlink_knowledge_source_tooltip", "Verknüpfung zur lokalen Wissensquelle lösen, ohne deren Dateien zu löschen."))
+        self.unlink_knowledge_source_btn.clicked.connect(self.unlink_knowledge_source)
+        self.delete_knowledge_source_btn = QPushButton(self.t("delete_knowledge_source", "Wissensspeicher löschen"))
+        self.delete_knowledge_source_btn.setToolTip(self.t("delete_knowledge_source_tooltip", "Lokalen Wissensspeicher und importierte Wissenseinträge löschen."))
+        self.delete_knowledge_source_btn.clicked.connect(self.delete_knowledge_source)
+        for btn in [self.choose_knowledge_source_btn, self.create_knowledge_source_btn, self.open_knowledge_source_btn, self.unlink_knowledge_source_btn, self.delete_knowledge_source_btn]:
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            btn.setMinimumHeight(38)
+        knowledge_buttons_grid.addWidget(self.create_knowledge_source_btn, 0, 0)
+        knowledge_buttons_grid.addWidget(self.choose_knowledge_source_btn, 0, 1)
+        knowledge_buttons_grid.addWidget(self.open_knowledge_source_btn, 0, 2)
+        knowledge_buttons_grid.addWidget(self.unlink_knowledge_source_btn, 1, 0)
+        knowledge_buttons_grid.addWidget(self.delete_knowledge_source_btn, 1, 1)
+        knowledge_buttons_grid.setColumnStretch(0, 1)
+        knowledge_buttons_grid.setColumnStretch(1, 1)
+        knowledge_buttons_grid.setColumnStretch(2, 1)
+        self.content_layout.addLayout(knowledge_buttons_grid)
+
         profile_row = QHBoxLayout()
         profile_info = QLabel(self.t("settings_profile_hint", "Konfigurationen laden oder speichern, inklusive System-Prompt und Zusatzprompt-Einstellungen."))
         profile_info.setObjectName("SubtleLabel")
@@ -2234,6 +2293,10 @@ class SettingsDialog(QDialog):
             self.allow_consecutive_auto_answer_dataset_reuse.setChecked(bool(merged.get("allow_consecutive_auto_answer_dataset_reuse", False)))
         self.auto_thinking_for_code_requests.setChecked(bool(merged.get("auto_thinking_for_code_requests", True)))
         self.debug_trace_enabled.setChecked(bool(merged.get("debug_trace_enabled", False)))
+        self.persistent_knowledge_enabled.setChecked(bool(merged.get("persistent_knowledge_enabled", False)))
+        self.knowledge_source_path.setText(str(merged.get("knowledge_source_path", "") or ""))
+        self.knowledge_retrieval_limit.setValue(int(merged.get("knowledge_retrieval_limit", 5) or 5))
+        self.knowledge_auto_capture_chats.setChecked(bool(merged.get("knowledge_auto_capture_chats", True)))
         self.chat_max_tokens.setValue(int(merged.get("chat_max_tokens", DEFAULT_CONFIG["chat_max_tokens"]) or DEFAULT_CONFIG["chat_max_tokens"]))
         self.auto_answer_rounds.setValue(int(merged.get("auto_answer_max_rounds", DEFAULT_CONFIG["auto_answer_max_rounds"]) or DEFAULT_CONFIG["auto_answer_max_rounds"]))
         self.auto_answer_eliza_share.setValue(int(merged.get("auto_answer_eliza_share", DEFAULT_CONFIG["auto_answer_eliza_share"]) or DEFAULT_CONFIG["auto_answer_eliza_share"]))
@@ -2291,6 +2354,46 @@ class SettingsDialog(QDialog):
         self.apply_config_to_widgets(profile_data)
         QMessageBox.information(self, self.t("load_settings_profile_done_title", "Konfiguration geladen"), self.t("load_settings_profile_done_text", "Die Konfiguration wurde in den Dialog übernommen. Mit Speichern wird sie aktiv.\n{path}").format(path=file_path))
 
+    def choose_knowledge_source(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, self.t("choose_knowledge_source_dialog_title", "Wissensquelle verbinden"), self.knowledge_source_path.text().strip() or str(KNOWLEDGE_DIR))
+        if not directory:
+            return
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        self.knowledge_source_path.setText(directory)
+        self.persistent_knowledge_enabled.setChecked(True)
+
+    def create_knowledge_source(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, self.t("create_knowledge_source_dialog_title", "Neue lokale Wissensquelle anlegen"), str(KNOWLEDGE_DIR))
+        if not directory:
+            return
+        wiki_dir = LocalKnowledgeBase(KNOWLEDGE_DIR).create_wiki_workspace(Path(directory))
+        self.knowledge_source_path.setText(str(wiki_dir))
+        self.persistent_knowledge_enabled.setChecked(True)
+
+    def open_knowledge_source(self) -> None:
+        path = self.knowledge_source_path.text().strip()
+        if not path:
+            QMessageBox.information(self, self.t("knowledge_no_source_title", "Keine Wissensquelle verknüpft"), self.t("knowledge_no_source_text", "Zurzeit ist kein lokaler Wissensordner verknüpft."))
+            return
+        target = Path(path)
+        brain_html = target / 'brain.html'
+        open_target = brain_html if brain_html.exists() else target
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(open_target)))
+
+    def unlink_knowledge_source(self) -> None:
+        self.knowledge_source_path.clear()
+
+    def delete_knowledge_source(self) -> None:
+        reply = QMessageBox.question(self, self.t("knowledge_delete_title", "Wissensspeicher löschen"), self.t("knowledge_delete_text", "Der lokale Wissensspeicher und alle importierten Wissenseinträge werden gelöscht. Fortfahren?"))
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            LocalKnowledgeBase(KNOWLEDGE_DIR).delete_all()
+        except Exception as exc:
+            QMessageBox.warning(self, self.t("knowledge_delete_failed_title", "Wissensspeicher konnte nicht gelöscht werden"), self.t("knowledge_delete_failed_text", "Der Wissensspeicher konnte nicht gelöscht werden.\n\n{error}").format(error=exc))
+            return
+        self.knowledge_source_path.clear()
+
     def get_config(self) -> dict:
         data = self.config.copy()
         data["interface_language"] = (self.interface_language.currentData() or "de").strip()
@@ -2324,6 +2427,10 @@ class SettingsDialog(QDialog):
             data["allow_consecutive_auto_answer_dataset_reuse"] = self.allow_consecutive_auto_answer_dataset_reuse.isChecked()
         data["auto_thinking_for_code_requests"] = self.auto_thinking_for_code_requests.isChecked()
         data["debug_trace_enabled"] = self.debug_trace_enabled.isChecked()
+        data["persistent_knowledge_enabled"] = self.persistent_knowledge_enabled.isChecked()
+        data["knowledge_source_path"] = self.knowledge_source_path.text().strip()
+        data["knowledge_retrieval_limit"] = int(self.knowledge_retrieval_limit.value())
+        data["knowledge_auto_capture_chats"] = self.knowledge_auto_capture_chats.isChecked()
         data["chat_max_tokens"] = int(self.chat_max_tokens.value())
         data["auto_answer_max_rounds"] = int(self.auto_answer_rounds.value())
         data["auto_answer_eliza_share"] = int(self.auto_answer_eliza_share.value())
@@ -2379,6 +2486,157 @@ class TTSActionWorker(QObject):
                 self.finished.emit(False, self.t("tts_setup_unknown_action", "Unbekannte Aktion: {action}").format(action=self.action))
         except Exception as exc:
             self.finished.emit(False, str(exc))
+
+
+class KnowledgeOverviewDialog(QDialog):
+    def __init__(self, knowledge_base: LocalKnowledgeBase, wiki_path: Path | None, t: Callable[[str, str], str], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.knowledge_base = knowledge_base
+        self.wiki_path = wiki_path
+        self.t = t
+        self.all_entries: list[dict] = []
+        self.current_filter = "all"
+
+        self.setWindowTitle(self.t("knowledge_overview_title", "Langzeitgedächtnis / Wissensübersicht"))
+        self.resize(1100, 720)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        top_row = QHBoxLayout()
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText(self.t("knowledge_overview_search_placeholder", "Wissenseinträge filtern oder durchsuchen …"))
+        self.search_box.textChanged.connect(self._refresh_list)
+        top_row.addWidget(self.search_box, 1)
+        self.refresh_btn = QPushButton(self.t("knowledge_overview_refresh", "Aktualisieren"))
+        self.refresh_btn.clicked.connect(self.reload_entries)
+        top_row.addWidget(self.refresh_btn)
+        self.open_folder_btn = QPushButton(self.t("knowledge_overview_open_folder", "Ordner öffnen"))
+        self.open_folder_btn.clicked.connect(self._open_store_folder)
+        top_row.addWidget(self.open_folder_btn)
+        self.open_wiki_btn = QPushButton(self.t("knowledge_overview_open_wiki", "Wiki öffnen"))
+        self.open_wiki_btn.clicked.connect(self._open_wiki_folder)
+        self.open_wiki_btn.setEnabled(self.wiki_path is not None)
+        top_row.addWidget(self.open_wiki_btn)
+        layout.addLayout(top_row)
+
+        filter_row = QHBoxLayout()
+        self.filter_buttons: dict[str, QPushButton] = {}
+        filter_specs = [
+            ("all", self.t("knowledge_filter_all", "Alle")),
+            ("chat_memory", self.t("knowledge_filter_chat_memory", "Chats")),
+            ("file", self.t("knowledge_filter_files", "Dateien")),
+        ]
+        for key, label in filter_specs:
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda checked=False, k=key: self._set_filter(k))
+            filter_row.addWidget(btn)
+            self.filter_buttons[key] = btn
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
+
+        self.summary_label = QLabel()
+        self.summary_label.setObjectName("SubtleLabel")
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        content_row = QHBoxLayout()
+        content_row.setSpacing(10)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setMinimumWidth(360)
+        self.list_widget.currentItemChanged.connect(self._show_current_entry)
+        content_row.addWidget(self.list_widget, 2)
+
+        self.preview = QTextBrowser()
+        self.preview.setOpenExternalLinks(True)
+        content_row.addWidget(self.preview, 3)
+
+        layout.addLayout(content_row, 1)
+
+        close_row = QHBoxLayout()
+        close_row.addStretch(1)
+        self.close_btn = QPushButton(self.t("close_button", "Schließen"))
+        self.close_btn.clicked.connect(self.accept)
+        close_row.addWidget(self.close_btn)
+        layout.addLayout(close_row)
+
+        self._set_filter("all")
+        self.reload_entries()
+
+    def _set_filter(self, key: str) -> None:
+        self.current_filter = key
+        for btn_key, btn in self.filter_buttons.items():
+            btn.setChecked(btn_key == key)
+        self._refresh_list()
+
+    def reload_entries(self) -> None:
+        self.all_entries = list(reversed(self.knowledge_base.load_entries()))
+        self._refresh_list()
+
+    def _refresh_list(self) -> None:
+        query = (self.search_box.text() or "").strip().lower()
+        self.list_widget.clear()
+        counts = {"all": len(self.all_entries), "chat_memory": 0, "file": 0}
+        visible = 0
+        for entry in self.all_entries:
+            entry_type = str(entry.get("type", "")).strip() or "unknown"
+            counts[entry_type] = counts.get(entry_type, 0) + 1
+            if self.current_filter != "all" and entry_type != self.current_filter:
+                continue
+            hay = " ".join([str(entry.get("title", "")), str(entry.get("content", "")), " ".join(entry.get("keywords", []) or [])]).lower()
+            if query and query not in hay:
+                continue
+            title = str(entry.get("title", self.t("knowledge_entry", "Eintrag"))).strip() or self.t("knowledge_entry", "Eintrag")
+            created = str(entry.get("created_at", "")).replace("T", " ")
+            item = QListWidgetItem(f"[{entry_type}] {title}\n{created}")
+            item.setData(Qt.ItemDataRole.UserRole, entry)
+            self.list_widget.addItem(item)
+            visible += 1
+        self.summary_label.setText(self.t("knowledge_overview_summary", "Wissenseinträge insgesamt: {all_count} · Chats: {chat_count} · Dateien/Medien: {file_count} · sichtbar: {visible_count}").format(all_count=counts.get("all", 0), chat_count=counts.get("chat_memory", 0), file_count=counts.get("file", 0), visible_count=visible))
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(0)
+        else:
+            self.preview.setHtml(f"<p>{html.escape(self.t('knowledge_overview_empty', 'Keine passenden Wissenseinträge gefunden.'))}</p>")
+
+    def _show_current_entry(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        if current is None:
+            self.preview.setHtml(f"<p>{html.escape(self.t('knowledge_overview_no_selection', 'Bitte links einen Eintrag auswählen.'))}</p>")
+            return
+        entry = current.data(Qt.ItemDataRole.UserRole) or {}
+        title = html.escape(str(entry.get('title', self.t('knowledge_entry', 'Eintrag'))))
+        created = html.escape(str(entry.get('created_at', '')))
+        entry_type = html.escape(str(entry.get('type', 'memory')))
+        keywords = entry.get('keywords', []) or []
+        content = html.escape(str(entry.get('content', '') or ''))
+        content = content.replace('\n', '<br>')
+        meta_parts = [f"<b>{html.escape(self.t('knowledge_meta_type', 'Typ'))}:</b> {entry_type}", f"<b>{html.escape(self.t('knowledge_meta_created', 'Erstellt'))}:</b> {created}"]
+        stored_path = str(entry.get('stored_path', '') or '')
+        source_path = str(entry.get('source_path', '') or '')
+        if source_path:
+            meta_parts.append(f"<b>{html.escape(self.t('knowledge_meta_source', 'Quelle'))}:</b> {html.escape(source_path)}")
+        if stored_path and stored_path != source_path:
+            meta_parts.append(f"<b>{html.escape(self.t('knowledge_meta_stored', 'Gespeichert unter'))}:</b> {html.escape(stored_path)}")
+        if keywords:
+            meta_parts.append(f"<b>{html.escape(self.t('knowledge_meta_keywords', 'Stichwörter'))}:</b> {html.escape(', '.join(map(str, keywords)))}")
+        body = content or f"<i>{html.escape(self.t('knowledge_no_text_content', 'Zu diesem Eintrag liegt kein eingebetteter Textinhalt vor.'))}</i>"
+        self.preview.setHtml(f"<h2>{title}</h2><p>{'<br>'.join(meta_parts)}</p><hr><div style='white-space: normal;'>{body}</div>")
+
+    def _open_store_folder(self) -> None:
+        try:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.knowledge_base.root_dir)))
+        except Exception:
+            pass
+
+    def _open_wiki_folder(self) -> None:
+        if self.wiki_path is None:
+            return
+        try:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.wiki_path)))
+        except Exception:
+            pass
 
 
 class TTSSetupDialog(QDialog):
@@ -2649,12 +2907,17 @@ class MainWindow(QMainWindow):
         self.current_request_consumes_rollover_short_instruction = False
         self.context_retry_in_progress = False
         self.last_saved_code_paths: list[Path] = []
+        self.ollama_start_attempt_in_progress = False
+        self.ollama_missing_prompt_shown = False
         self.debug_logger = DebugTraceLogger(bool(self.config.get("debug_trace_enabled", False)))
         self.debug_runtime_prompt_tokens = 0
         self.debug_runtime_completion_tokens = 0
         self.debug_runtime_requests = 0
         self.debug_session_totals: dict[str, dict[str, int]] = {}
         self.current_request_debug_info: dict = {}
+        self.knowledge_base = LocalKnowledgeBase(KNOWLEDGE_DIR)
+        self.pending_context_attachments: list[dict] = []
+        self.last_retrieved_knowledge_hits: list[dict] = []
 
         self.setWindowTitle(build_window_title())
         self.audio_error_signal.connect(self._on_audio_error)
@@ -2736,6 +2999,10 @@ class MainWindow(QMainWindow):
             "auto_read_user_inputs": bool(self.config.get("auto_read_user_inputs", False)),
             "auto_thinking_for_code_requests": bool(self.config.get("auto_thinking_for_code_requests", True)),
             "debug_trace_enabled": bool(self.config.get("debug_trace_enabled", False)),
+            "persistent_knowledge_enabled": bool(self.config.get("persistent_knowledge_enabled", False)),
+            "knowledge_source_path": str(self.config.get("knowledge_source_path", "") or ""),
+            "knowledge_retrieval_limit": int(self.config.get("knowledge_retrieval_limit", 5) or 5),
+            "knowledge_auto_capture_chats": bool(self.config.get("knowledge_auto_capture_chats", True)),
         }
 
     def _debug_current_chat_token_estimate(self) -> int:
@@ -2772,6 +3039,12 @@ class MainWindow(QMainWindow):
                 "message_count": len(self.current_session.messages) if self.current_session else 0,
                 "reapply_short_instruction_after_rollover": bool(getattr(self.current_session, "reapply_short_instruction_after_rollover", False)) if self.current_session else False,
             },
+            "knowledge": {
+                "enabled": bool(self.config.get("persistent_knowledge_enabled", False)),
+                "linked_path": str(self.config.get("knowledge_source_path", "") or ""),
+                "pending_attachments": [item.get("display_name", "") for item in self.pending_context_attachments],
+                "last_retrieval_hits": [str(item.get("title", "")) for item in self.last_retrieved_knowledge_hits],
+            },
             "current_chat_tokens_estimated": self._debug_current_chat_token_estimate() if self.current_session else 0,
             "runtime_totals": self._debug_runtime_totals(),
             "session_totals": self._debug_current_session_totals(),
@@ -2781,6 +3054,158 @@ class MainWindow(QMainWindow):
             payload.update(extra)
         self.debug_logger.write(event, payload)
 
+
+    def _knowledge_enabled(self) -> bool:
+        return bool(self.config.get("persistent_knowledge_enabled", False))
+
+    def _knowledge_wiki_path(self) -> Path | None:
+        raw = str(self.config.get("knowledge_source_path", "") or "").strip()
+        return Path(raw) if raw else None
+
+    def _set_config_value(self, key: str, value) -> None:
+        self.config[key] = value
+        save_config(self.config)
+
+    def _set_persistent_knowledge_enabled(self, enabled: bool) -> None:
+        self._set_config_value("persistent_knowledge_enabled", bool(enabled))
+        self._refresh_context_source_label()
+        self._debug_log("knowledge_toggle", {"enabled": bool(enabled)})
+
+    def _set_knowledge_source_path(self, path: str) -> None:
+        self._set_config_value("knowledge_source_path", str(path or ""))
+        self._refresh_context_source_label()
+        self._debug_log("knowledge_source_changed", {"knowledge_source_path": str(path or "")})
+
+    def _create_local_knowledge_source(self, target_dir: Path | None = None) -> Path:
+        wiki_dir = self.knowledge_base.create_wiki_workspace(target_dir)
+        self._set_knowledge_source_path(str(wiki_dir))
+        return wiki_dir
+
+    def _refresh_context_source_label(self) -> None:
+        if not hasattr(self, "context_sources_label"):
+            return
+        parts: list[str] = []
+        if self._knowledge_enabled():
+            wiki = self._knowledge_wiki_path()
+            if wiki is not None:
+                parts.append(self.t("knowledge_label_active", "Langzeitgedächtnis aktiv") + f": {wiki}")
+            else:
+                parts.append(self.t("knowledge_label_active_no_path", "Langzeitgedächtnis aktiv (noch ohne verknüpfte Wiki)"))
+        if self.pending_context_attachments:
+            names = ", ".join(item.get("display_name", "") for item in self.pending_context_attachments[:4] if item.get("display_name"))
+            extra = ""
+            if len(self.pending_context_attachments) > 4:
+                extra = f" +{len(self.pending_context_attachments) - 4}"
+            parts.append(self.t("pending_context_sources", "Kontextquellen für die nächste Nachricht") + f": {names}{extra}")
+        self.context_sources_label.setText(" · ".join(parts) if parts else self.t("context_sources_idle", "Keine zusätzlichen Kontextquellen aktiv."))
+
+    def _choose_files_for_context(self) -> None:
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            self.t("context_file_dialog_title", "Medien und Dateien auswählen"),
+            "",
+            self.t("context_file_dialog_filter", "Alle Dateien (*.*)"),
+        )
+        if not file_paths:
+            return
+        added = 0
+        wiki_path = self._knowledge_wiki_path()
+        for file_name in file_paths:
+            try:
+                prepared = self.knowledge_base.import_file(Path(file_name), session_title=self.current_session.title if self.current_session else '', persist_to_memory=self._knowledge_enabled(), wiki_path=wiki_path)
+            except Exception as exc:
+                QMessageBox.warning(self, self.t("knowledge_import_failed_title", "Datei konnte nicht hinzugefügt werden"), self.t("knowledge_import_failed_text", "Die ausgewählte Datei konnte nicht als Kontextquelle hinzugefügt werden.\n\n{error}").format(error=exc))
+                continue
+            entry = prepared.get("entry", {})
+            self.pending_context_attachments.append({
+                "display_name": entry.get("title", Path(file_name).name),
+                "prompt_context": prepared.get("prompt_context", ""),
+                "entry": entry,
+            })
+            added += 1
+        if added:
+            self._refresh_context_source_label()
+            self.statusBar().showMessage(self.t("context_files_added_status", "{count} Kontextquelle(n) für die nächste Nachricht hinzugefügt.").format(count=added), 4000)
+            self._debug_log("context_files_added", {"count": added, "files": [item.get("display_name", "") for item in self.pending_context_attachments]})
+
+    def _clear_pending_context_attachments(self) -> None:
+        self.pending_context_attachments = []
+        self._refresh_context_source_label()
+
+    def _build_pending_attachment_context(self) -> str:
+        if not self.pending_context_attachments:
+            return ""
+        lines = [self.t("attachment_context_header", "Zusätzliche Kontextquellen für diese Nachricht:")]
+        for index, item in enumerate(self.pending_context_attachments, 1):
+            display_name = str(item.get("display_name", f"Datei {index}") or f"Datei {index}")
+            prompt_context = str(item.get("prompt_context", "") or "").strip()
+            if prompt_context:
+                lines.append(f"{index}. {display_name}\n{prompt_context}")
+            else:
+                lines.append(f"{index}. {display_name}")
+        return "\n\n".join(lines).strip()
+
+
+    def _knowledge_retrieval_context(self) -> str:
+        self.last_retrieved_knowledge_hits = []
+        if not self._knowledge_enabled():
+            return ""
+        query = self._latest_user_visible_text()
+        if not query:
+            return ""
+        context, hits = self.knowledge_base.build_retrieval_context(query, limit=int(self.config.get("knowledge_retrieval_limit", 5) or 5))
+        self.last_retrieved_knowledge_hits = hits
+        return context
+
+    def _open_linked_knowledge_source(self) -> None:
+        wiki = self._knowledge_wiki_path()
+        if wiki is None:
+            QMessageBox.information(self, self.t("knowledge_no_source_title", "Keine Wissensquelle verknüpft"), self.t("knowledge_no_source_text", "Zurzeit ist kein lokaler Wissensordner verknüpft."))
+            return
+        try:
+            brain_html = wiki / 'brain.html'
+            open_target = brain_html if brain_html.exists() else wiki
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(open_target)))
+        except Exception as exc:
+            QMessageBox.warning(self, self.t("knowledge_open_failed_title", "Wissensquelle konnte nicht geöffnet werden"), self.t("knowledge_open_failed_text", "Der Wissensordner konnte nicht geöffnet werden.\n\n{error}").format(error=exc))
+
+    def _choose_knowledge_source_from_menu(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, self.t("choose_knowledge_source_dialog_title", "Wissensquelle verbinden"), str(self._knowledge_wiki_path() or KNOWLEDGE_DIR))
+        if not directory:
+            return
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        self._set_knowledge_source_path(directory)
+        self.action_enable_knowledge.setChecked(True)
+        self._set_persistent_knowledge_enabled(True)
+        self.statusBar().showMessage(self.t("knowledge_source_connected_status", "Wissensquelle wurde verbunden."), 3500)
+
+    def _create_knowledge_source_from_menu(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, self.t("create_knowledge_source_dialog_title", "Neue lokale Wissensquelle anlegen"), str(KNOWLEDGE_DIR))
+        if not directory:
+            return
+        wiki_dir = self._create_local_knowledge_source(Path(directory))
+        self.action_enable_knowledge.setChecked(True)
+        self._set_persistent_knowledge_enabled(True)
+        self.statusBar().showMessage(self.t("knowledge_source_created_status", "Neue lokale Wissensquelle wurde angelegt."), 3500)
+        self._debug_log("knowledge_source_created", {"knowledge_source_path": str(wiki_dir)})
+
+    def _delete_knowledge_storage(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            self.t("knowledge_delete_title", "Wissensspeicher löschen"),
+            self.t("knowledge_delete_text", "Der lokale Wissensspeicher und alle importierten Wissenseinträge werden gelöscht. Fortfahren?"),
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.knowledge_base.delete_all()
+        except Exception as exc:
+            QMessageBox.warning(self, self.t("knowledge_delete_failed_title", "Wissensspeicher konnte nicht gelöscht werden"), self.t("knowledge_delete_failed_text", "Der Wissensspeicher konnte nicht gelöscht werden.\n\n{error}").format(error=exc))
+            return
+        self.pending_context_attachments = []
+        self._refresh_context_source_label()
+        self._debug_log("knowledge_deleted", {})
+        self.statusBar().showMessage(self.t("knowledge_deleted_status", "Lokaler Wissensspeicher wurde gelöscht."), 4000)
 
     def apply_theme(self, theme_name: str) -> None:
         theme_name = theme_name if theme_name in THEMES else "Midnight"
@@ -2913,11 +3338,41 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
+        input_row = QHBoxLayout()
+        input_row.setSpacing(8)
+        self.context_menu_button = QToolButton()
+        self.context_menu_button.setText('+')
+        self.context_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.context_menu_button.setToolTip(self.t("context_menu_button_tooltip", "Dateien, Medien und Langzeitgedächtnis verwalten"))
+        self.context_menu = QMenu(self)
+        self.action_add_context_files = self.context_menu.addAction(self.t("add_context_files", "Medien und Dateien hinzufügen …"))
+        self.action_add_context_files.triggered.connect(self._choose_files_for_context)
+        self.action_enable_knowledge = self.context_menu.addAction(self.t("enable_persistent_knowledge", "Permanentes Langzeitgedächtnis aktiv"))
+        self.action_enable_knowledge.setCheckable(True)
+        self.action_enable_knowledge.setChecked(self._knowledge_enabled())
+        self.action_enable_knowledge.toggled.connect(self._set_persistent_knowledge_enabled)
+        self.action_choose_knowledge_source = self.context_menu.addAction(self.t("choose_knowledge_source", "Wissensquelle verbinden …"))
+        self.action_choose_knowledge_source.triggered.connect(self._choose_knowledge_source_from_menu)
+        self.action_create_knowledge_source = self.context_menu.addAction(self.t("create_knowledge_source", "Neue lokale Wissensquelle anlegen …"))
+        self.action_create_knowledge_source.triggered.connect(self._create_knowledge_source_from_menu)
+        self.action_open_knowledge_source = self.context_menu.addAction(self.t("open_knowledge_source", "Verknüpfte Wissensquelle öffnen"))
+        self.action_open_knowledge_source.triggered.connect(self._open_linked_knowledge_source)
+        self.action_clear_context_files = self.context_menu.addAction(self.t("clear_context_files", "Ausgewählte Kontextquellen für nächste Nachricht verwerfen"))
+        self.action_clear_context_files.triggered.connect(self._clear_pending_context_attachments)
+        self.context_menu_button.setMenu(self.context_menu)
+        input_row.addWidget(self.context_menu_button, 0)
+
         self.input_box = QPlainTextEdit()
         self.input_box.setPlaceholderText(self.t("composer_placeholder", "Nachricht schreiben …  (Strg+Enter zum Senden)"))
         self.input_box.setFixedHeight(120)
         self.input_box.textChanged.connect(self._on_input_text_changed)
-        layout.addWidget(self.input_box)
+        input_row.addWidget(self.input_box, 1)
+        layout.addLayout(input_row)
+
+        self.context_sources_label = QLabel(self.t("context_sources_idle", "Keine zusätzlichen Kontextquellen aktiv."))
+        self.context_sources_label.setObjectName("SubtleLabel")
+        self.context_sources_label.setWordWrap(True)
+        layout.addWidget(self.context_sources_label)
 
         self.send_shortcut_return = QShortcut(QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Return), self.input_box)
         self.send_shortcut_return.activated.connect(self.send_message)
@@ -2969,11 +3424,32 @@ class MainWindow(QMainWindow):
         self.send_btn.setObjectName("AccentButton")
         self.send_btn.clicked.connect(self.send_message)
 
+        self.open_generated_code_btn = QPushButton(self.t("open_generated_code_button", "Code-Ausgabe öffnen"))
+        self.open_generated_code_btn.clicked.connect(self.open_generated_code_folder)
+        self.open_generated_code_btn.setToolTip(self.t("open_generated_code_tooltip", "Öffnet den Ordner app_data/generated_code mit den bisher gespeicherten Code-Dateien."))
+        buttons.addWidget(self.open_generated_code_btn)
+
+        self.open_longterm_memory_btn = QPushButton(self.t("open_longterm_memory_button", "Langzeitgedächtnis öffnen"))
+        self.open_longterm_memory_btn.clicked.connect(self.open_longterm_memory_overview)
+        self.open_longterm_memory_btn.setToolTip(self.t("open_longterm_memory_tooltip", "Öffnet eine interaktive Übersicht über das lokale Langzeitgedächtnis und die gespeicherten Wissenseinträge."))
+        buttons.addWidget(self.open_longterm_memory_btn)
+
         buttons.addWidget(self.stop_btn)
         buttons.addWidget(self.send_btn)
         layout.addLayout(buttons)
 
         return frame
+
+    def open_generated_code_folder(self) -> None:
+        GENERATED_CODE_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(GENERATED_CODE_DIR)))
+        except Exception as exc:
+            QMessageBox.warning(self, self.t("open_generated_code_failed_title", "Code-Ausgabe konnte nicht geöffnet werden"), self.t("open_generated_code_failed_text", "Der Ordner mit der Code-Ausgabe konnte nicht geöffnet werden.\n\n{error}").format(error=exc))
+
+    def open_longterm_memory_overview(self) -> None:
+        dialog = KnowledgeOverviewDialog(self.knowledge_base, self._knowledge_wiki_path(), self.t, self)
+        dialog.exec()
 
     def refresh_ui_texts(self) -> None:
         self.setWindowTitle(build_window_title())
@@ -2989,6 +3465,14 @@ class MainWindow(QMainWindow):
         self.export_pdf_btn.setText(self.t("export_pdf_button", "Chat exportieren"))
         self.settings_btn.setText(self.t("settings_button", "Einstellungen"))
         self.input_box.setPlaceholderText(self.t("composer_placeholder", "Nachricht schreiben …  (Strg+Enter zum Senden)"))
+        self.context_menu_button.setToolTip(self.t("context_menu_button_tooltip", "Dateien, Medien und Langzeitgedächtnis verwalten"))
+        self.action_add_context_files.setText(self.t("add_context_files", "Medien und Dateien hinzufügen …"))
+        self.action_enable_knowledge.setText(self.t("enable_persistent_knowledge", "Permanentes Langzeitgedächtnis aktiv"))
+        self.action_choose_knowledge_source.setText(self.t("choose_knowledge_source", "Wissensquelle verbinden …"))
+        self.action_create_knowledge_source.setText(self.t("create_knowledge_source", "Neue lokale Wissensquelle anlegen …"))
+        self.action_open_knowledge_source.setText(self.t("open_knowledge_source", "Verknüpfte Wissensquelle öffnen"))
+        self.action_clear_context_files.setText(self.t("clear_context_files", "Ausgewählte Kontextquellen für nächste Nachricht verwerfen"))
+        self._refresh_context_source_label()
         self.composer_hint.setText(self.t("composer_hint", "Ollama wird lokal angesprochen. Antworten werden gestreamt."))
         if self.worker_thread is None:
             self.composer_state_label.setText(self.t("composer_state_idle", "Bereit."))
@@ -2997,6 +3481,10 @@ class MainWindow(QMainWindow):
             self.tts_feedback_elapsed_label.setText(self.t("tts_feedback_elapsed", "TTS: {seconds} s").format(seconds=0))
         self.stop_btn.setText(self.t("stop_button", "Stop"))
         self.send_btn.setText(self.t("send_button", "Senden"))
+        self.open_generated_code_btn.setText(self.t("open_generated_code_button", "Code-Ausgabe öffnen"))
+        self.open_generated_code_btn.setToolTip(self.t("open_generated_code_tooltip", "Öffnet den Ordner app_data/generated_code mit den bisher gespeicherten Code-Dateien."))
+        self.open_longterm_memory_btn.setText(self.t("open_longterm_memory_button", "Langzeitgedächtnis öffnen"))
+        self.open_longterm_memory_btn.setToolTip(self.t("open_longterm_memory_tooltip", "Öffnet eine interaktive Übersicht über das lokale Langzeitgedächtnis und die gespeicherten Wissenseinträge."))
         self.auto_answer_checkbox.setText(self.t("auto_answer_checkbox", "Auto Answer (ELIZA)"))
         current_session_id = self.current_session.session_id if self.current_session else None
         if current_session_id:
@@ -3113,6 +3601,7 @@ class MainWindow(QMainWindow):
         self.store.save(session)
         self.refresh_sessions_ui()
         self.open_session(session.session_id)
+        self._clear_pending_context_attachments()
         self._debug_log("session_created", {"new_session_id": session.session_id, "new_session_title": session.title})
 
     def delete_current_session(self) -> None:
@@ -3163,6 +3652,7 @@ class MainWindow(QMainWindow):
                 break
         self._set_request_feedback("idle")
         self._set_tts_feedback('idle')
+        self._clear_pending_context_attachments()
         self._debug_log("session_opened", {"opened_session_id": session_id, "opened_session_title": target.title})
 
     def clear_chat_layout(self) -> None:
@@ -3185,6 +3675,118 @@ class MainWindow(QMainWindow):
         self.chat_layout.insertWidget(self.chat_layout.count() - 1, bubble)
         return bubble
 
+    def _ollama_base_url_is_local(self) -> bool:
+        try:
+            parsed = urlparse(str(self.config.get("ollama_base_url", "http://127.0.0.1:11434") or "http://127.0.0.1:11434"))
+            host = (parsed.hostname or '').strip().lower()
+            return host in {'127.0.0.1', 'localhost', '::1'}
+        except Exception:
+            return False
+
+    def _configured_ollama_executable(self) -> str:
+        return str(self.config.get("ollama_executable_path", "") or "").strip()
+
+    def _ollama_candidate_paths(self) -> list[str]:
+        candidates: list[str] = []
+        configured = self._configured_ollama_executable()
+        if configured:
+            candidates.append(configured)
+        local_app = os.environ.get('LOCALAPPDATA', '').strip()
+        if local_app:
+            candidates.extend([
+                str(Path(local_app) / 'Programs' / 'Ollama' / 'ollama app.exe'),
+                str(Path(local_app) / 'Programs' / 'Ollama' / 'Ollama.exe'),
+                str(Path(local_app) / 'Programs' / 'Ollama' / 'ollama.exe'),
+            ])
+        which_ollama = shutil.which('ollama')
+        if which_ollama:
+            candidates.append(which_ollama)
+        unique: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            normalized = os.path.normcase(os.path.abspath(candidate)) if os.path.exists(candidate) else candidate.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(candidate)
+        return unique
+
+    def _launch_ollama_candidate(self, candidate: str) -> bool:
+        if not candidate:
+            return False
+        args = [candidate]
+        basename = os.path.basename(candidate).lower()
+        if basename == 'ollama' or basename == 'ollama.exe':
+            args = [candidate, 'serve']
+        creationflags = 0
+        kwargs = {
+            'stdout': subprocess.DEVNULL,
+            'stderr': subprocess.DEVNULL,
+            'stdin': subprocess.DEVNULL,
+        }
+        if os.name == 'nt':
+            creationflags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+            kwargs['creationflags'] = creationflags
+        else:
+            kwargs['start_new_session'] = True
+        subprocess.Popen(args, **kwargs)
+        return True
+
+    def _prompt_for_ollama_executable(self) -> bool:
+        self.ollama_missing_prompt_shown = True
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle(self.t('ollama_missing_prompt_title', 'Ollama nicht gefunden'))
+        msg.setText(self.t('ollama_missing_prompt_text', 'Ollama konnte nicht automatisch gefunden oder gestartet werden. Bitte installiere Ollama oder wähle die ausführbare Datei aus, wenn Ollama an einem anderen Ort liegt.'))
+        choose_btn = msg.addButton(self.t('choose_ollama_executable', 'Ollama-Datei auswählen …'), QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton(self.t('cancel_button_generic', 'Abbrechen'), QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+        if msg.clickedButton() is not choose_btn:
+            return False
+        selected, _ = QFileDialog.getOpenFileName(self, self.t('ollama_executable_browse_title', 'Ollama-Datei auswählen'), str(Path.home()), self.t('exe_files_filter', 'Programme (*.exe);;Alle Dateien (*)'))
+        if not selected:
+            return False
+        self.config['ollama_executable_path'] = selected
+        save_config(self.config)
+        try:
+            if self._launch_ollama_candidate(selected):
+                self._set_header_status(self.t('status_ollama_starting', 'Ollama wird gestartet … Modelle werden gleich neu geladen.'))
+                QTimer.singleShot(3500, self.refresh_models)
+                return True
+        except Exception as exc:
+            QMessageBox.warning(self, self.t('ollama_launch_failed_title', 'Ollama konnte nicht gestartet werden'), self.t('ollama_launch_failed_text', 'Die ausgewählte Ollama-Datei konnte nicht gestartet werden.\n\n{error}').format(error=exc))
+            return False
+        return False
+
+    def _ensure_ollama_running(self, allow_prompt: bool = False) -> bool:
+        if not self._ollama_base_url_is_local() or self.ollama_start_attempt_in_progress:
+            return False
+        for candidate in self._ollama_candidate_paths():
+            try:
+                if not os.path.exists(candidate) and os.path.basename(candidate).lower() not in {'ollama', 'ollama.exe'}:
+                    continue
+                self.ollama_start_attempt_in_progress = True
+                if self._launch_ollama_candidate(candidate):
+                    if not self._configured_ollama_executable() and os.path.exists(candidate):
+                        self.config['ollama_executable_path'] = candidate
+                        save_config(self.config)
+                    self._debug_log('ollama_auto_started', {'candidate': candidate})
+                    self._set_header_status(self.t('status_ollama_starting', 'Ollama wird gestartet … Modelle werden gleich neu geladen.'))
+                    self.statusBar().showMessage(self.t('ollama_wait_startup_status', 'Ollama wird gestartet. Modelle werden automatisch neu geladen …'), 5000)
+                    QTimer.singleShot(3500, self._retry_refresh_models_after_start)
+                    return True
+            except Exception as exc:
+                self._debug_log('ollama_auto_start_failed', {'candidate': candidate, 'error': str(exc)})
+                continue
+        self.ollama_start_attempt_in_progress = False
+        if allow_prompt and not self.ollama_missing_prompt_shown:
+            return self._prompt_for_ollama_executable()
+        return False
+
+    def _retry_refresh_models_after_start(self) -> None:
+        self.ollama_start_attempt_in_progress = False
+        self.refresh_models()
+
     def refresh_visible_bubble_role_labels(self) -> None:
         for i in range(self.chat_layout.count()):
             widget = self.chat_layout.itemAt(i).widget()
@@ -3202,6 +3804,7 @@ class MainWindow(QMainWindow):
         try:
             client = OllamaClient(self.config.get("ollama_base_url", "http://127.0.0.1:11434").strip())
             models = client.get_models()
+            self.ollama_missing_prompt_shown = False
             if not models:
                 self._set_header_status(self.t("status_ollama_ok_no_models", "Ollama reachable, but no models were found."))
             else:
@@ -3211,7 +3814,8 @@ class MainWindow(QMainWindow):
                     self.model_combo.setCurrentText(last_model)
                 self._set_header_status(self.t("status_ollama_ok_models", "Ollama reachable · {count} model(s)").format(count=len(models)))
         except Exception as exc:
-            self._set_header_status(self.t("status_ollama_not_reachable", "Ollama offline · {error}").format(error=exc))
+            if not self._ensure_ollama_running(allow_prompt=True):
+                self._set_header_status(self.t("status_ollama_not_reachable", "Ollama offline · {error}").format(error=exc))
         finally:
             self.model_combo.blockSignals(False)
 
@@ -3383,10 +3987,15 @@ class MainWindow(QMainWindow):
 
     def _build_user_message_content(self, text: str) -> tuple[str, str, bool]:
         visible_text = str(text or "").strip()
+        stored_content = visible_text
+        attachment_context = self._build_pending_attachment_context() if self.pending_context_attachments else ""
+        if attachment_context:
+            stored_content = f"{stored_content}\n\n[{attachment_context}]".strip()
         short_instruction = self._current_auto_answer_short_instruction().strip()
         should_embed = bool(visible_text) and self._should_embed_short_instruction_in_next_user_message() and bool(short_instruction)
-        stored_content = append_hidden_instruction_to_user_text(visible_text, short_instruction) if should_embed else visible_text
+        stored_content = append_hidden_instruction_to_user_text(stored_content, short_instruction) if should_embed else stored_content
         return stored_content, visible_text, should_embed
+
 
     def _latest_user_visible_text(self) -> str:
         for item in reversed(self._request_message_items()):
@@ -3513,6 +4122,7 @@ class MainWindow(QMainWindow):
             "request_total_budget_estimated": request_prompt_tokens + int(self.config.get("chat_max_tokens", 512) or 512),
             "think_mode": bool(think_mode),
             "latest_user_text": self._latest_user_visible_text(),
+            "retrieved_knowledge_titles": [item.get("title", "") for item in self.last_retrieved_knowledge_hits],
         }
         self.current_request_consumes_rollover_short_instruction = False
         self._debug_log("request_prepared", {"request": dict(self.current_request_debug_info)})
@@ -3599,6 +4209,11 @@ class MainWindow(QMainWindow):
         text = self.input_box.toPlainText().strip()
         if not text:
             return
+        if not self.model_combo.currentText().strip():
+            self.refresh_models()
+            if not self.model_combo.currentText().strip():
+                self.statusBar().showMessage(self.t('ollama_wait_startup_status', 'Ollama wird gestartet. Modelle werden automatisch neu geladen …'), 5000)
+                return
         if self.worker_thread is not None:
             QMessageBox.warning(self, self.t("already_running_title", "Läuft bereits"), self.t("already_running_message", "Es läuft bereits eine Antwortgenerierung."))
             return
@@ -3608,6 +4223,7 @@ class MainWindow(QMainWindow):
         self.auto_answer_waiting_for_user_audio = False
         self.input_box.clear()
         user_message = self._append_user_message(text)
+        self._clear_pending_context_attachments()
         self._begin_assistant_request()
         if self.config.get("auto_read_user_inputs", False) and self.config.get("tts_backend", "disabled") != "disabled":
             self.read_aloud_message(user_message, show_disabled_message=False, allow_autoplay=True)
@@ -3697,6 +4313,20 @@ class MainWindow(QMainWindow):
             assistant_message = self.current_session.messages[-1]
             self.store.save(self.current_session)
             self.refresh_sessions_ui()
+            if self._knowledge_enabled() and bool(self.config.get("knowledge_auto_capture_chats", True)):
+                user_items = [item for item in reversed(self._request_message_items()) if item.role == "user"]
+                if user_items and not bool(getattr(user_items[0], "generated", False)):
+                    try:
+                        self.knowledge_base.remember_exchange(
+                            session_id=self.current_session.session_id,
+                            session_title=self.current_session.title,
+                            user_text=(message_visible_content(user_items[0]) or user_items[0].content or "").strip(),
+                            assistant_text=final_text,
+                            model_name=self.current_session.model_name,
+                            wiki_path=self._knowledge_wiki_path(),
+                        )
+                    except Exception as exc:
+                        self._debug_log("knowledge_capture_failed", {"error": str(exc)})
         self.last_saved_code_paths = save_generated_code_blocks(final_text)
         auto_read = assistant_message is not None and self.config.get("auto_read_assistant_responses", True) and self.config.get("tts_backend", "disabled") != "disabled"
         if assistant_message is not None and auto_read:
@@ -4311,6 +4941,13 @@ class MainWindow(QMainWindow):
             debug_log_created = self.debug_logger.set_enabled(bool(self.config.get("debug_trace_enabled", False)))
             save_config(self.config)
             self.auto_answer_checkbox.setChecked(bool(self.config.get("auto_answer_enabled", False)))
+            self.action_enable_knowledge.setChecked(bool(self.config.get("persistent_knowledge_enabled", False)))
+            if self.config.get("knowledge_source_path", ""):
+                try:
+                    self.knowledge_base.create_wiki_workspace(Path(self.config.get("knowledge_source_path", "")))
+                except Exception:
+                    pass
+            self._refresh_context_source_label()
 
             lang_changed = old_lang != self.config.get("interface_language", "de")
             theme_changed = old_theme != self.config.get("theme", "Midnight")
