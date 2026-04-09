@@ -35,5 +35,10 @@
   "debug_trace_enabled": false,
   "auto_thinking_for_code_requests": true,
   "auto_answer_use_question_replies_for_all": true,
-  "allow_consecutive_auto_answer_dataset_reuse": false
+  "allow_consecutive_auto_answer_dataset_reuse": false,
+  "persistent_knowledge_enabled": false,
+  "knowledge_source_path": "",
+  "knowledge_retrieval_limit": 5,
+  "knowledge_auto_capture_chats": true,
+  "ollama_executable_path": ""
 }
