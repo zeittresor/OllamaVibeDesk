@@ -21,6 +21,15 @@ set "HF_HOME=%CD%\app_data\cache\hf_home"
 set "TRANSFORMERS_CACHE=%CD%\app_data\cache\transformers"
 set "PYTHONUTF8=1"
 
+set "OLLAMA_APP=%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"
+set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:11434/api/tags -TimeoutSec 1 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>nul
+if errorlevel 1 (
+    if exist "%OLLAMA_APP%" start "Ollama" "%OLLAMA_APP%"
+    if not exist "%OLLAMA_APP%" if exist "%OLLAMA_EXE%" start "Ollama" "%OLLAMA_EXE%" serve
+)
+
 rem Start the GUI with a minimized helper console instead of closing it accidentally.
 if /I "%~1"=="--here" goto run_here
 

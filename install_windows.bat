@@ -59,7 +59,20 @@ if not exist "app_data\cache" mkdir "app_data\cache"
 if not exist "app_data\chats" mkdir "app_data\chats"
 if not exist "app_data\logs" mkdir "app_data\logs"
 
-echo !C_OK![4/4] Installation complete.!C_RESET!
+if not exist "app_data\cache\tiddlywiki_empty.html" (
+    echo !C_INFO![4/5] Downloading blank TiddlyWiki template...!C_RESET!
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://tiddlywiki.com/empty.html' -OutFile 'app_data\cache\tiddlywiki_empty.html' -UseBasicParsing } catch { exit 1 }"
+    if errorlevel 1 (
+        echo !C_WARN!Blank TiddlyWiki template could not be downloaded right now.!C_RESET!
+        echo !C_WARN!You can still use the app, but new knowledge sources will only get a fallback local brain.html until the template is available.!C_RESET!
+    ) else (
+        echo !C_OK!Blank TiddlyWiki template cached successfully.!C_RESET!
+    )
+) else (
+    echo !C_DIM![4/5] Blank TiddlyWiki template already cached.!C_RESET!
+)
+
+echo !C_OK![5/5] Installation complete.!C_RESET!
 echo.
 echo !C_WARN!The app will start automatically soon. Press N to cancel the first launch.!C_RESET!
 for /L %%S in (10,-1,1) do (
