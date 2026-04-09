@@ -20,7 +20,9 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **a
 - auto answer function to act like the human based of the ELIZA algorythm to automaticly continue a chat dialog
 - automatic code generating based upon the dialogs in the auto-answer mode (Python, c#, php, html, what ever..) (in subfolder ..\app_data\generated_code)
 - automaticly switching to "thinking" mode in advanced questions like for code generation, jokes, abstract questions..
-- works 100 % offline after installation - you can pull the plug and select a matrix like theme :-)
+- short- and longterm "brain" function added to be available for ANY chat as a knowledge source (base is a local working wiki or something similar if unavailable)
+- RAG function added to add/remove/change/view/modify external knowledge bases
+- Function to add media files and data files to be analysed by a selected LLM added
 
 ## Example with SAPi output (german language)
 
