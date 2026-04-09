@@ -24,6 +24,9 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **a
 - RAG function added to add/remove/change/view/modify external knowledge bases
 - Function to add media files and data files to be analysed by a selected LLM added
 - Buttons added in Settings for the "Brain" and Buttons in Chat windows to view generated output code and to view the current "Brain Memory".
+  
+<img width="451" height="277" alt="ovv_v1_16b" src="https://github.com/user-attachments/assets/1a9844f9-fe1c-47d5-838c-afcbde55120c" />
+  
 
 ## Example with SAPi output (german language)
 
