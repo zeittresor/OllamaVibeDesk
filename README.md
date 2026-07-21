@@ -4,6 +4,13 @@ v2.0 (21.07.2026) - New is a much better Auto-Answer mode for example..
 
 Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **automatic answer function**, **different speakers**, **streaming responses**, and optional **local TTS playback/export** through Windows SAPI or a **VibeVoice compatible build-in server**.
 
+<img width="1415" height="945" alt="vibevoice_2_0" src="https://github.com/user-attachments/assets/3444719a-0501-4302-9fd6-23c648a25798" />
+
+Voice output example (VibeVoice Mode ; here German language / emotional):
+
+https://github.com/user-attachments/assets/997cf864-988d-42f6-9135-f8e57f01b99b
+
+
 ## Main features
 
 - real Ollama integration via local API
@@ -32,10 +39,6 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **a
 ## Example with SAPi output (german language)
 
 <img width="1419" height="947" alt="ui1_1_16" src="https://github.com/user-attachments/assets/e2fa1cf4-b47d-44ea-8f8a-5329d3b4256f" />
-
-Voice output example (VibeVoice Mode):
-
-https://github.com/user-attachments/assets/e954e451-ed6e-4a08-b72f-f3dca99c49dd
 
 Note: Using VibeVoice Mode takes some time to generate a voice output in contrast to the use of the default Windows Sapi.
 
