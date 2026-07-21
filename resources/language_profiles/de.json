@@ -1,0 +1,88 @@
+{
+  "sapi_language_tag": "de-DE",
+  "assistant_voice_candidates": [
+    "Katja",
+    "Hedda",
+    "Zira"
+  ],
+  "user_voice_candidates": [
+    "Michael",
+    "Stefan",
+    "Karsten"
+  ],
+  "reflection_rules": [
+    {
+      "from": "deine",
+      "to": "meine"
+    },
+    {
+      "from": "dein",
+      "to": "mein"
+    },
+    {
+      "from": "deiner",
+      "to": "meiner"
+    },
+    {
+      "from": "deinem",
+      "to": "meinem"
+    },
+    {
+      "from": "deinen",
+      "to": "meinen"
+    },
+    {
+      "from": "du",
+      "to": "ich"
+    },
+    {
+      "from": "dich",
+      "to": "mich"
+    },
+    {
+      "from": "dir",
+      "to": "mir"
+    },
+    {
+      "from": "ich",
+      "to": "du"
+    },
+    {
+      "from": "mir",
+      "to": "dir"
+    },
+    {
+      "from": "mich",
+      "to": "dich"
+    },
+    {
+      "from": "mein",
+      "to": "dein"
+    },
+    {
+      "from": "meine",
+      "to": "deine"
+    }
+  ],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "csharp",
+    "php",
+    "html",
+    "gui",
+    "interface",
+    "programmcode",
+    "quellcode",
+    "codeblock",
+    "markdown-code",
+    "code erstellen",
+    "code erzeugen",
+    "code schreiben",
+    "programm",
+    "skript",
+    "anwendung",
+    "app mit gui",
+    "mit gui"
+  ]
+}

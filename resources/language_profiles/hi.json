@@ -1,0 +1,25 @@
+{
+  "sapi_language_tag": "hi-IN",
+  "assistant_voice_candidates": [
+    "Heera"
+  ],
+  "user_voice_candidates": [
+    "Hemant"
+  ],
+  "reflection_rules": [],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "php",
+    "html",
+    "gui",
+    "इंटरफ़ेस",
+    "सोर्स कोड",
+    "कोड ब्लॉक",
+    "कोड लिखें",
+    "कोड बनाएँ",
+    "प्रोग्राम",
+    "स्क्रिप्ट",
+    "एप्लिकेशन"
+  ]
+}

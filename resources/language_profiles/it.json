@@ -1,0 +1,26 @@
+{
+  "sapi_language_tag": "it-IT",
+  "assistant_voice_candidates": [
+    "Elsa"
+  ],
+  "user_voice_candidates": [
+    "Cosimo"
+  ],
+  "reflection_rules": [],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "php",
+    "html",
+    "gui",
+    "interfaccia",
+    "codice sorgente",
+    "blocco di codice",
+    "scrivi codice",
+    "genera codice",
+    "crea codice",
+    "programma",
+    "script",
+    "applicazione"
+  ]
+}

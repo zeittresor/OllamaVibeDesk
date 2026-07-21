@@ -1,0 +1,26 @@
+{
+  "sapi_language_tag": "nl-NL",
+  "assistant_voice_candidates": [
+    "Hanna"
+  ],
+  "user_voice_candidates": [
+    "Frank"
+  ],
+  "reflection_rules": [],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "php",
+    "html",
+    "gui",
+    "interface",
+    "broncode",
+    "codeblok",
+    "code schrijven",
+    "code genereren",
+    "code maken",
+    "programma",
+    "script",
+    "toepassing"
+  ]
+}

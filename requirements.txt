@@ -1,3 +1,4 @@
 PyQt6>=6.7
 requests>=2.31
 Markdown>=3.6
+psutil>=5.9

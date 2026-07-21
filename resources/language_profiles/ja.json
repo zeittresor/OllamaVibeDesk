@@ -1,0 +1,26 @@
+{
+  "sapi_language_tag": "ja-JP",
+  "assistant_voice_candidates": [
+    "Haruka",
+    "Ayumi"
+  ],
+  "user_voice_candidates": [
+    "Ichiro"
+  ],
+  "reflection_rules": [],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "php",
+    "html",
+    "gui",
+    "インターフェース",
+    "ソースコード",
+    "コードブロック",
+    "コードを書いて",
+    "コードを生成",
+    "プログラム",
+    "スクリプト",
+    "アプリケーション"
+  ]
+}

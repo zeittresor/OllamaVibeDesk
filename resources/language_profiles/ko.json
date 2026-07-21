@@ -1,0 +1,25 @@
+{
+  "sapi_language_tag": "ko-KR",
+  "assistant_voice_candidates": [
+    "Heami"
+  ],
+  "user_voice_candidates": [
+    "InJoon"
+  ],
+  "reflection_rules": [],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "php",
+    "html",
+    "gui",
+    "인터페이스",
+    "소스 코드",
+    "코드 블록",
+    "코드를 작성",
+    "코드 생성",
+    "프로그램",
+    "스크립트",
+    "애플리케이션"
+  ]
+}

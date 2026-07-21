@@ -1,0 +1,68 @@
+{
+  "sapi_language_tag": "en-US",
+  "assistant_voice_candidates": [
+    "Zira",
+    "Grace",
+    "Emma"
+  ],
+  "user_voice_candidates": [
+    "David",
+    "Mark",
+    "Mike"
+  ],
+  "reflection_rules": [
+    {
+      "from": "yourself",
+      "to": "myself"
+    },
+    {
+      "from": "yours",
+      "to": "mine"
+    },
+    {
+      "from": "your",
+      "to": "my"
+    },
+    {
+      "from": "you",
+      "to": "I"
+    },
+    {
+      "from": "me",
+      "to": "you"
+    },
+    {
+      "from": "mine",
+      "to": "yours"
+    },
+    {
+      "from": "my",
+      "to": "your"
+    },
+    {
+      "from": "i",
+      "to": "you"
+    }
+  ],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "csharp",
+    "php",
+    "html",
+    "gui",
+    "interface",
+    "program code",
+    "source code",
+    "code block",
+    "markdown code",
+    "write code",
+    "generate code",
+    "create code",
+    "program",
+    "script",
+    "application",
+    "app with gui",
+    "with gui"
+  ]
+}

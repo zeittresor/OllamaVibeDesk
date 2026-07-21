@@ -1,0 +1,29 @@
+{
+  "sapi_language_tag": "fr-FR",
+  "assistant_voice_candidates": [
+    "Hortense",
+    "Julie"
+  ],
+  "user_voice_candidates": [
+    "Paul",
+    "Claude"
+  ],
+  "reflection_rules": [],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "php",
+    "html",
+    "gui",
+    "interface",
+    "code source",
+    "bloc de code",
+    "écrire du code",
+    "générer du code",
+    "créer du code",
+    "programme",
+    "script",
+    "application",
+    "avec interface"
+  ]
+}

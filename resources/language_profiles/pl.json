@@ -1,0 +1,26 @@
+{
+  "sapi_language_tag": "pl-PL",
+  "assistant_voice_candidates": [
+    "Paulina"
+  ],
+  "user_voice_candidates": [
+    "Adam"
+  ],
+  "reflection_rules": [],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "php",
+    "html",
+    "gui",
+    "interfejs",
+    "kod źródłowy",
+    "blok kodu",
+    "napisz kod",
+    "wygeneruj kod",
+    "utwórz kod",
+    "program",
+    "skrypt",
+    "aplikacja"
+  ]
+}

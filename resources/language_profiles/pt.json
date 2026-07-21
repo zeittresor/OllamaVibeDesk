@@ -1,0 +1,27 @@
+{
+  "sapi_language_tag": "pt-PT",
+  "assistant_voice_candidates": [
+    "Maria",
+    "Helia"
+  ],
+  "user_voice_candidates": [
+    "Duarte"
+  ],
+  "reflection_rules": [],
+  "code_request_keywords": [
+    "python",
+    "c#",
+    "php",
+    "html",
+    "gui",
+    "interface",
+    "código fonte",
+    "bloco de código",
+    "escrever código",
+    "gerar código",
+    "criar código",
+    "programa",
+    "script",
+    "aplicação"
+  ]
+}
