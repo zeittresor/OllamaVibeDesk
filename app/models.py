@@ -16,6 +16,24 @@ class ChatMessage:
     auto_answer_source_kind: Optional[str] = None
     auto_answer_source_key: Optional[str] = None
 
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ChatMessage":
+        raw = data if isinstance(data, dict) else {}
+        role = str(raw.get("role", "user") or "user").strip().lower()
+        if role not in {"user", "assistant"}:
+            role = "user"
+        return cls(
+            role=role,
+            content=str(raw.get("content", "") or ""),
+            created_at=str(raw.get("created_at", datetime.now().isoformat(timespec="seconds")) or datetime.now().isoformat(timespec="seconds")),
+            generated=bool(raw.get("generated", False)),
+            audio_path=str(raw.get("audio_path")) if raw.get("audio_path") else None,
+            display_content=str(raw.get("display_content")) if raw.get("display_content") is not None else None,
+            auto_answer_source_kind=str(raw.get("auto_answer_source_kind")) if raw.get("auto_answer_source_kind") else None,
+            auto_answer_source_key=str(raw.get("auto_answer_source_key")) if raw.get("auto_answer_source_key") else None,
+        )
+
     @classmethod
     def now(
         cls,
@@ -70,5 +88,6 @@ class ChatSession:
             model_name=data.get("model_name", ""),
             reapply_short_instruction_after_rollover=bool(data.get("reapply_short_instruction_after_rollover", False)),
         )
-        session.messages = [ChatMessage(**item) for item in data.get("messages", [])]
+        raw_messages = data.get("messages", []) if isinstance(data, dict) else []
+        session.messages = [ChatMessage.from_dict(item) for item in raw_messages if isinstance(item, dict)]
         return session
