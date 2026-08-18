@@ -16,6 +16,8 @@ https://github.com/user-attachments/assets/997cf864-988d-42f6-9135-f8e57f01b99b
 - real Ollama integration via local API
 - streamed assistant output
 - Support for Vibevoice ASR Input
+- Optional Audio Postprocessing
+- Different Characters (for the User Auto-Answers and/or LLM Personality)
 - model list refresh from the local Ollama API
 - persistent chat sessions stored **inside the app folder**
 - theme switching
