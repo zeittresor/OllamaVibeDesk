@@ -1,6 +1,6 @@
 # OllamaVibeDesk
 
-v2.0 (21.07.2026) - New is a much better Auto-Answer mode for example..
+v2.2 (18.08.2026) - New is a much better Auto-Answer mode for example..
 
 Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **automatic answer function**, **different speakers**, **streaming responses**, and optional **local TTS playback/export** through Windows SAPI or a **VibeVoice compatible build-in server**.
 
@@ -15,6 +15,7 @@ https://github.com/user-attachments/assets/997cf864-988d-42f6-9135-f8e57f01b99b
 
 - real Ollama integration via local API
 - streamed assistant output
+- Support for Vibevoice ASR Input
 - model list refresh from the local Ollama API
 - persistent chat sessions stored **inside the app folder**
 - theme switching
