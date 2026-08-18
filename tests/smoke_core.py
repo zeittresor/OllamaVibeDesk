@@ -10,18 +10,77 @@ sys.path.insert(0, str(ROOT))
 
 from app.auto_answer_data import ensure_auto_answer_data, load_bundle, read_list
 from app.auto_answer_engine import expand_phrase_templates, generate_from_clean_text, is_question_text
-from app.config import DEFAULT_CONFIG
+from app.config import DEFAULT_CONFIG, normalize_config
 from app.hardware import detect_hardware
 from app.knowledge import LocalKnowledgeBase, uuid_hash
 from app.models import ChatMessage
+from app.personalities import load_personalities, resolve_configured_personality_prompt
 from app.themes import THEMES
+from app.tts_profiles import VOICE_STYLE_IDS, effective_voice_controls, normalize_voice_style
+from app.version import VERSION
+from app.speech_models import (
+    PYTHON_REALTIME_TTS_MODEL,
+    VIBEVOICE_ASR_MODELS,
+    VIBEVOICE_TTS_MODELS,
+    get_vibevoice_asr_model,
+    get_vibevoice_tts_model,
+)
 
 
 def main() -> int:
     ensure_auto_answer_data()
     assert DEFAULT_CONFIG["auto_answer_eliza_share"] + DEFAULT_CONFIG["auto_answer_llm_share"] <= 100
+    assert VERSION == ROOT.joinpath("version.txt").read_text(encoding="utf-8").strip()
+    assert len(VOICE_STYLE_IDS) >= 8
+    assert normalize_voice_style("unknown") == "natural"
+    rate, pitch, volume, effect, intensity = effective_voice_controls("robotic", 100, 0, 0, 100)
+    assert (rate, pitch, volume, effect, intensity) == (-1, -1, 100, "robotic", 100)
+    repaired = normalize_config({
+        "tts_backend": "broken",
+        "windows_sapi_rate": 999,
+        "auto_answer_eliza_share": 90,
+        "auto_answer_llm_share": 90,
+        "autoplay_tts": "false",
+    })
+    assert repaired["tts_backend"] == "disabled"
+    assert repaired["windows_sapi_rate"] == 10
+    assert repaired["auto_answer_eliza_share"] + repaired["auto_answer_llm_share"] == 100
+    assert repaired["autoplay_tts"] is False
+    assert DEFAULT_CONFIG["vibevoice_model_path"] == PYTHON_REALTIME_TTS_MODEL
+    assert len(VIBEVOICE_TTS_MODELS) == 2
+    assert len(VIBEVOICE_ASR_MODELS) == 2
+    assert get_vibevoice_asr_model("vibevoice_asr_7b").backend == "vibevoice"
+    assert get_vibevoice_tts_model("vibevoice_realtime_0_5b").backend == "vibevoice-tts"
+    try:
+        get_vibevoice_tts_model("vibevoice_asr_bitnet")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("ASR model was accepted as TTS")
+    constrained = normalize_config({
+        "tts_backend": "crispasr_openai",
+        "vibevoice_crisp_tts_model": "vibevoice_1_5b",
+        "tts_voice": "sapi::wrong",
+        "asr_model": "vibevoice_asr_bitnet",
+        "asr_language": "de",
+        "vibevoice_model_path": "P2Enjoy/VibeVoice-ASR-BitNet-slim",
+    })
+    assert constrained["tts_voice"] == "default"
+    assert constrained["asr_language"] == "auto"
+    assert constrained["vibevoice_model_path"] == PYTHON_REALTIME_TTS_MODEL
     assert "Amiga ECS" in THEMES
     assert len(THEMES) >= 10
+    user_personalities = load_personalities("user")
+    assistant_personalities = load_personalities("assistant")
+    assert len(user_personalities) == 20
+    assert len(assistant_personalities) == 20
+    assert {item.gender for item in user_personalities} >= {"female", "male", "neutral"}
+    assert {item.gender for item in assistant_personalities} >= {"female", "male", "neutral"}
+    configured = dict(DEFAULT_CONFIG)
+    configured["user_personality_id"] = user_personalities[0].personality_id
+    configured["assistant_personality_id"] = assistant_personalities[0].personality_id
+    assert resolve_configured_personality_prompt(configured, "user", "de")
+    assert resolve_configured_personality_prompt(configured, "assistant", "de")
     german, german_questions = load_bundle("de")
     assert german["phrases"]["de"]
     assert german["topic_words"]["de"]
