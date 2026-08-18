@@ -80,14 +80,20 @@ class ChatSession:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ChatSession":
+        raw = data if isinstance(data, dict) else {}
+        session_id = str(raw.get("session_id", "") or "").strip()
+        if not session_id:
+            raise ValueError("Chat session is missing its session_id")
         session = cls(
-            session_id=data["session_id"],
-            title=data.get("title", "Neue Unterhaltung"),
-            created_at=data.get("created_at", datetime.now().isoformat(timespec="seconds")),
-            updated_at=data.get("updated_at", datetime.now().isoformat(timespec="seconds")),
-            model_name=data.get("model_name", ""),
-            reapply_short_instruction_after_rollover=bool(data.get("reapply_short_instruction_after_rollover", False)),
+            session_id=session_id,
+            title=str(raw.get("title", "Neue Unterhaltung") or "Neue Unterhaltung"),
+            created_at=str(raw.get("created_at", datetime.now().isoformat(timespec="seconds")) or datetime.now().isoformat(timespec="seconds")),
+            updated_at=str(raw.get("updated_at", datetime.now().isoformat(timespec="seconds")) or datetime.now().isoformat(timespec="seconds")),
+            model_name=str(raw.get("model_name", "") or ""),
+            reapply_short_instruction_after_rollover=bool(raw.get("reapply_short_instruction_after_rollover", False)),
         )
-        raw_messages = data.get("messages", []) if isinstance(data, dict) else []
+        raw_messages = raw.get("messages", [])
+        if not isinstance(raw_messages, list):
+            raw_messages = []
         session.messages = [ChatMessage.from_dict(item) for item in raw_messages if isinstance(item, dict)]
         return session

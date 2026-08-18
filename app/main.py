@@ -54,12 +54,22 @@ from PyQt6.QtWidgets import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, DEBUG_LOG_DIR, SETTINGS_PROFILE_DIR, KNOWLEDGE_DIR, SAPI_LEXICON_PATH, DEFAULT_CONFIG, load_config, save_config, ensure_directories
+from app.config import AUDIO_DIR, CHATS_DIR, EXPORTS_DIR, GENERATED_CODE_DIR, DEBUG_LOG_DIR, SETTINGS_PROFILE_DIR, KNOWLEDGE_DIR, SAPI_LEXICON_PATH, DEFAULT_CONFIG, load_config, normalize_config, save_config, ensure_directories
 from app.models import ChatMessage, ChatSession
 from app.ollama_client import OllamaClient
 from app.themes import THEMES
 from app.tts_client import TTSClient
+from app.tts_profiles import VOICE_STYLE_IDS
 from app.tts_setup import VibeVoiceManager
+from app.asr_client import ASRClient
+from app.crispasr_runtime import CrispASRManager, find_crispasr_executable
+from app.speech_models import (
+    PYTHON_REALTIME_TTS_MODEL,
+    VIBEVOICE_ASR_MODELS,
+    VIBEVOICE_TTS_MODELS,
+    get_vibevoice_asr_model,
+    get_vibevoice_tts_model,
+)
 from app.i18n import available_languages, load_language_pack
 from app.auto_answer_data import load_bundle as load_auto_answer_bundle, read_list as read_auto_answer_list, write_list as write_auto_answer_list, reset_to_default as reset_auto_answer_list
 from app.auto_answer_engine import generate_from_clean_text, is_question_text, result as auto_answer_result
@@ -67,6 +77,9 @@ from app.hardware import HardwareProfile, detect_hardware
 from app.language_profiles import load_language_profile, preferred_voice_candidates, sapi_language_tag
 from app.file_utils import atomic_write_text, backup_file
 from app.knowledge import LocalKnowledgeBase
+from app.personalities import CUSTOM_PERSONALITY_ID, load_personalities, load_personality, render_personality_prompt, resolve_configured_personality_prompt
+from app.personality_editor import PersonalityEditorDialog
+from app.version import DISPLAY_VERSION
 
 
 def normalize_markdown_code_fences(text: str, close_unfinished: bool = False) -> str:
@@ -317,9 +330,9 @@ AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT = 40
 AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES = 5
 AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
 AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
-APP_VERSION = "v2.0"
+APP_VERSION = DISPLAY_VERSION
 APP_TITLE_WITH_VERSION = f"OllamaVibeDesk {APP_VERSION}"
-APP_WINDOW_DATE = "2026-07-21"
+APP_WINDOW_DATE = "2026-08-18"
 MAX_MARKDOWN_RENDER_CHARS = 120000
 MAX_MARKDOWN_RENDER_LINES = 2500
 MAX_BROWSER_TEXT_CHARS = 180000
@@ -710,7 +723,10 @@ class SessionStore:
         ensure_directories()
 
     def _path(self, session_id: str) -> Path:
-        return CHATS_DIR / f"{session_id}.json"
+        safe_id = re.sub(r"[^A-Za-z0-9._-]+", "_", str(session_id or "")).strip("._")
+        if not safe_id:
+            raise ValueError("Invalid chat session ID")
+        return CHATS_DIR / f"{safe_id}.json"
 
     def list_sessions(self) -> List[ChatSession]:
         sessions: List[ChatSession] = []
@@ -1287,11 +1303,16 @@ class AutoAnswerShortPromptDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, config: dict, parent: Optional[QWidget] = None, open_tts_setup_callback: Optional[Callable[[], None]] = None, model_names: Optional[list[str]] = None, hardware_profile: Optional[HardwareProfile] = None) -> None:
+    def __init__(self, config: dict, parent: Optional[QWidget] = None, open_tts_setup_callback: Optional[Callable[[], None]] = None, open_speech_setup_callback: Optional[Callable[[], None]] = None, model_names: Optional[list[str]] = None, hardware_profile: Optional[HardwareProfile] = None) -> None:
         super().__init__(parent)
         self.config = config.copy()
+        self._custom_user_personality_prompt = str(self.config.get("auto_answer_llm_system_prompt", "") or "")
+        self._custom_assistant_personality_prompt = str(self.config.get("system_prompt", "") or "")
+        self._last_user_personality_id = str(self.config.get("user_personality_id", CUSTOM_PERSONALITY_ID) or CUSTOM_PERSONALITY_ID)
+        self._last_assistant_personality_id = str(self.config.get("assistant_personality_id", CUSTOM_PERSONALITY_ID) or CUSTOM_PERSONALITY_ID)
         self.translations = load_language_pack(self.config.get("interface_language", "de"))
         self.open_tts_setup_callback = open_tts_setup_callback
+        self.open_speech_setup_callback = open_speech_setup_callback
         self.model_names = list(model_names or [])
         self.hardware_profile = hardware_profile or detect_hardware()
         self.setWindowTitle(self.t("settings_title", "Einstellungen"))
@@ -1350,6 +1371,7 @@ class SettingsDialog(QDialog):
         self.tts_backend.addItem(self.t("tts_backend_disabled", "disabled"), "disabled")
         self.tts_backend.addItem(self.t("tts_backend_windows_sapi", "windows_sapi (integrierte Windows-Stimmen)"), "windows_sapi")
         self.tts_backend.addItem(self.t("tts_backend_vibevoice", "vibevoice_openai (lokaler Wrapper)"), "vibevoice_openai")
+        self.tts_backend.addItem(self.t("tts_backend_crispasr", "VibeVoice GGUF (CrispASR)"), "crispasr_openai")
         backend_value = self.config.get("tts_backend", "disabled")
         backend_index = max(0, self.tts_backend.findData(backend_value))
         self.tts_backend.setCurrentIndex(backend_index)
@@ -1368,7 +1390,10 @@ class SettingsDialog(QDialog):
         self.content_layout.addWidget(self.tts_hint)
 
         self.tts_url = QLineEdit(self.config["tts_base_url"])
-        add_row(self.t("tts_base_url_label", "TTS Base URL"), self.tts_url)
+        self.tts_url_row = add_row(self.t("tts_base_url_label", "TTS Base URL"), self.tts_url)
+
+        self.crispasr_tts_url = QLineEdit(str(self.config.get("crispasr_tts_base_url", DEFAULT_CONFIG["crispasr_tts_base_url"])))
+        self.crispasr_tts_url_row = add_row(self.t("crispasr_tts_url_label", "CrispASR TTS Base URL"), self.crispasr_tts_url)
 
         self.tts_voice = QComboBox()
         self.tts_voice.setEditable(False)
@@ -1391,6 +1416,65 @@ class SettingsDialog(QDialog):
         self.tts_model.setCurrentText(current_tts_model)
         self.tts_model.setToolTip(self.t("tts_model_tooltip", "Relevant only for VibeVoice/OpenAI-compatible TTS backends. In most cases you can leave this at 'tts-1-hd'."))
         self.tts_model_row = add_row(self.t("tts_model_label", "TTS model"), self.tts_model)
+
+        self.vibevoice_model_path = QComboBox()
+        self.vibevoice_model_path.setEditable(False)
+        self.vibevoice_model_path.addItem(PYTHON_REALTIME_TTS_MODEL)
+        configured_vibe_model = PYTHON_REALTIME_TTS_MODEL
+        self.vibevoice_model_path.setCurrentText(configured_vibe_model)
+        self.vibevoice_model_path.setToolTip(self.t("vibevoice_model_path_tooltip", "Only streaming TTS checkpoints compatible with the selected wrapper can be used. ASR models are speech recognition models and cannot generate speech."))
+        self.vibevoice_model_path_row = add_row(self.t("vibevoice_model_path_label", "VibeVoice TTS checkpoint / model path"), self.vibevoice_model_path)
+
+        self.crispasr_tts_model = QComboBox()
+        for speech_model in VIBEVOICE_TTS_MODELS:
+            self.crispasr_tts_model.addItem(f"{speech_model.label} · {speech_model.languages}", speech_model.model_id)
+        configured_crisp_tts = str(self.config.get("vibevoice_crisp_tts_model", VIBEVOICE_TTS_MODELS[0].model_id))
+        crisp_tts_index = self.crispasr_tts_model.findData(configured_crisp_tts)
+        self.crispasr_tts_model.setCurrentIndex(crisp_tts_index if crisp_tts_index >= 0 else 0)
+        self.crispasr_tts_model.setToolTip(self.t("crispasr_tts_model_tooltip", "Only VibeVoice models verified for the CrispASR TTS backend are listed."))
+        self.crispasr_tts_model_row = add_row(self.t("crispasr_tts_model_label", "Compatible VibeVoice TTS model"), self.crispasr_tts_model)
+
+        speech_title = QLabel(self.t("speech_input_group_title", "Speech input (ASR)"))
+        speech_title.setObjectName("SectionTitle")
+        self.content_layout.addWidget(speech_title)
+
+        self.asr_backend = QComboBox()
+        self.asr_backend.addItem(self.t("asr_backend_disabled", "Disabled"), "disabled")
+        self.asr_backend.addItem(self.t("asr_backend_vibevoice", "VibeVoice ASR (CrispASR)"), "crispasr_vibevoice")
+        asr_backend_index = self.asr_backend.findData(self.config.get("asr_backend", "disabled"))
+        self.asr_backend.setCurrentIndex(asr_backend_index if asr_backend_index >= 0 else 0)
+        add_row(self.t("asr_backend_label", "Speech recognition backend"), self.asr_backend)
+
+        self.asr_model = QComboBox()
+        for speech_model in VIBEVOICE_ASR_MODELS:
+            self.asr_model.addItem(f"{speech_model.label} · {speech_model.languages}", speech_model.model_id)
+        asr_model_index = self.asr_model.findData(self.config.get("asr_model", VIBEVOICE_ASR_MODELS[0].model_id))
+        self.asr_model.setCurrentIndex(asr_model_index if asr_model_index >= 0 else 0)
+        self.asr_model.setToolTip(self.t("asr_model_tooltip", "Only ASR checkpoints documented as compatible with the selected runtime are listed."))
+        self.asr_model_row = add_row(self.t("asr_model_label", "Compatible VibeVoice ASR model"), self.asr_model)
+
+        self.asr_url = QLineEdit(str(self.config.get("asr_base_url", DEFAULT_CONFIG["asr_base_url"])))
+        self.asr_url_row = add_row(self.t("asr_url_label", "CrispASR ASR Base URL"), self.asr_url)
+
+        self.asr_language = QComboBox()
+        self.asr_language_options = (("auto", self.t("asr_language_auto", "Automatic / model native")), ("de", "Deutsch"), ("en", "English"), ("fr", "Français"), ("es", "Español"), ("it", "Italiano"), ("ja", "日本語"), ("ko", "한국어"), ("pt", "Português"), ("ru", "Русский"), ("vi", "Tiếng Việt"), ("zh", "中文"))
+        for code, label in self.asr_language_options:
+            self.asr_language.addItem(label, code)
+        language_index = self.asr_language.findData(self.config.get("asr_language", "auto"))
+        self.asr_language.setCurrentIndex(language_index if language_index >= 0 else 0)
+        self.asr_language_row = add_row(self.t("asr_language_label", "Recognition language"), self.asr_language)
+
+        speech_tools_row = QHBoxLayout()
+        self.open_speech_setup_btn = QPushButton(self.t("speech_runtime_setup", "Install / update CrispASR …"))
+        self.open_speech_setup_btn.clicked.connect(self.open_speech_setup)
+        speech_tools_row.addWidget(self.open_speech_setup_btn)
+        speech_tools_row.addStretch(1)
+        self.content_layout.addLayout(speech_tools_row)
+
+        self.asr_hint = QLabel(self.t("asr_compatibility_hint", "The full VibeVoice ASR model supports German and 50+ languages. The smaller BitNet model is limited to its listed languages."))
+        self.asr_hint.setObjectName("SubtleLabel")
+        self.asr_hint.setWordWrap(True)
+        self.content_layout.addWidget(self.asr_hint)
 
         self.autoplay = QCheckBox(self.t("autoplay_label", "Audio nach dem Erzeugen direkt abspielen"))
         self.autoplay.setChecked(bool(self.config.get("autoplay_tts", True)))
@@ -1611,11 +1695,31 @@ class SettingsDialog(QDialog):
         self.auto_answer_llm_include_recent_context.setChecked(bool(self.config.get("auto_answer_llm_include_recent_context", True)))
         limits_layout.addWidget(self.auto_answer_llm_include_recent_context)
 
-        self.auto_answer_llm_system_prompt = QPlainTextEdit(str(self.config.get("auto_answer_llm_system_prompt", "") or ""))
+        user_personality_row = QHBoxLayout()
+        user_personality_row.addWidget(QLabel(self.t("user_personality_label", "Persönlichkeit des simulierten Benutzers")), 1)
+        self.user_personality_combo = QComboBox()
+        self.user_personality_combo.setMinimumContentsLength(34)
+        self.user_personality_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._populate_personality_combo(
+            self.user_personality_combo,
+            "user",
+            str(self.config.get("user_personality_id", CUSTOM_PERSONALITY_ID) or CUSTOM_PERSONALITY_ID),
+        )
+        self.user_personality_combo.setToolTip(self.t("user_personality_tooltip", "Bestimmt die Persönlichkeit der lokalen LLM, die im Auto-Answer-Modus die Benutzerrolle übernimmt."))
+        user_personality_row.addWidget(self.user_personality_combo, 2)
+        self.edit_user_personalities_btn = QPushButton(self.t("personality_editor_open", "Charakter-/Persönlichkeitseditor …"))
+        self.edit_user_personalities_btn.clicked.connect(lambda: self.open_personality_editor("user"))
+        user_personality_row.addWidget(self.edit_user_personalities_btn)
+        limits_layout.addLayout(user_personality_row)
+
+        self.auto_answer_llm_system_prompt = QPlainTextEdit()
         self.auto_answer_llm_system_prompt.setPlaceholderText(self.t("auto_answer_llm_system_prompt_placeholder", "Eigene Persönlichkeit/System-Prompt der lokalen Auto-Answer-LLM. Leer = sprachabhängiger Standard."))
-        self.auto_answer_llm_system_prompt.setFixedHeight(100)
+        self.auto_answer_llm_system_prompt.setFixedHeight(120)
+        self.auto_answer_llm_system_prompt.setToolTip(self.t("personality_prompt_preview_tooltip", "Bei einem Preset ist dies eine schreibgeschützte Vorschau. Für freie Eingaben 'Benutzerdefiniert' wählen."))
         limits_layout.addWidget(QLabel(self.t("auto_answer_llm_system_prompt_label", "Persönlichkeit/System-Prompt der Auto-Answer-LLM")))
         limits_layout.addWidget(self.auto_answer_llm_system_prompt)
+        self.user_personality_combo.currentIndexChanged.connect(self._on_user_personality_changed)
+        self._apply_personality_selection("user", preserve_custom=True)
 
         phrase_repeat_row = QHBoxLayout()
         phrase_repeat_row.addWidget(QLabel(self.t("auto_answer_phrase_repeat_lookback_label", "Wie viele letzte Auto-Answer-Benutzertexte nicht wiederholt werden dürfen")), 1)
@@ -1678,9 +1782,36 @@ class SettingsDialog(QDialog):
         self.sapi_group = QFrame()
         sapi_layout = QVBoxLayout(self.sapi_group)
         sapi_layout.setContentsMargins(0, 8, 0, 0)
-        sapi_title = QLabel(self.t("windows_sapi_group_title", "Windows-SAPI Feinabstimmung"))
+        sapi_title = QLabel(self.t("tts_voice_design_group_title", "Stimmgestaltung und Feinabstimmung"))
         sapi_title.setObjectName("SubtleLabel")
         sapi_layout.addWidget(sapi_title)
+
+        voice_design_hint = QLabel(self.t(
+            "tts_voice_design_hint",
+            "Stimmprofile ergänzen die gewählte Stimme. Geschwindigkeit, Tonhöhe und Lautstärke können für Assistent und Benutzer getrennt eingestellt werden. Die genaue Wirkung hängt von Stimme und Backend ab.",
+        ))
+        voice_design_hint.setObjectName("SubtleLabel")
+        voice_design_hint.setWordWrap(True)
+        sapi_layout.addWidget(voice_design_hint)
+
+        assistant_style_row = QHBoxLayout()
+        assistant_style_row.addWidget(QLabel(self.t("tts_assistant_style_label", "Stimmprofil Assistent")), 1)
+        self.tts_assistant_style = QComboBox()
+        self._populate_voice_style_combo(self.tts_assistant_style, str(self.config.get("tts_assistant_style", "natural")))
+        assistant_style_row.addWidget(self.tts_assistant_style, 2)
+        sapi_layout.addLayout(assistant_style_row)
+        self.tts_assistant_style_intensity, self.tts_assistant_style_intensity_value = self._make_slider_row(
+            sapi_layout,
+            self.t("tts_style_intensity_label", "Profilstärke"),
+            0,
+            100,
+            int(self.config.get("tts_assistant_style_intensity", 65)),
+            None,
+        )
+
+        assistant_tuning_title = QLabel(self.t("tts_assistant_tuning_title", "Feinabstimmung Assistent"))
+        assistant_tuning_title.setObjectName("SubtleLabel")
+        sapi_layout.addWidget(assistant_tuning_title)
 
         self.sapi_rate_slider, self.sapi_rate_label_value = self._make_slider_row(
             sapi_layout,
@@ -1706,12 +1837,76 @@ class SettingsDialog(QDialog):
             int(self.config.get("windows_sapi_volume", 100)),
             None,
         )
+
+        user_style_row = QHBoxLayout()
+        user_style_row.addWidget(QLabel(self.t("tts_user_style_label", "Stimmprofil Benutzer")), 1)
+        self.tts_user_style = QComboBox()
+        self._populate_voice_style_combo(self.tts_user_style, str(self.config.get("tts_user_style", "natural")))
+        user_style_row.addWidget(self.tts_user_style, 2)
+        sapi_layout.addLayout(user_style_row)
+        self.tts_user_style_intensity, self.tts_user_style_intensity_value = self._make_slider_row(
+            sapi_layout,
+            self.t("tts_style_intensity_label", "Profilstärke"),
+            0,
+            100,
+            int(self.config.get("tts_user_style_intensity", 65)),
+            None,
+        )
+
+        user_tuning_title = QLabel(self.t("tts_user_tuning_title", "Feinabstimmung Benutzer"))
+        user_tuning_title.setObjectName("SubtleLabel")
+        sapi_layout.addWidget(user_tuning_title)
+        self.sapi_user_rate_slider, self.sapi_user_rate_label_value = self._make_slider_row(
+            sapi_layout,
+            self.t("sapi_rate_label", "Sprechgeschwindigkeit"),
+            -10,
+            10,
+            int(self.config.get("windows_sapi_user_rate", 0)),
+            self.t("sapi_value_default", "Standard"),
+        )
+        self.sapi_user_pitch_slider, self.sapi_user_pitch_label_value = self._make_slider_row(
+            sapi_layout,
+            self.t("sapi_pitch_label", "Tonhöhe"),
+            -10,
+            10,
+            int(self.config.get("windows_sapi_user_pitch", 0)),
+            self.t("sapi_value_default", "Standard"),
+        )
+        self.sapi_user_volume_slider, self.sapi_user_volume_label_value = self._make_slider_row(
+            sapi_layout,
+            self.t("sapi_volume_label", "Lautstärke"),
+            0,
+            100,
+            int(self.config.get("windows_sapi_user_volume", 100)),
+            None,
+        )
         self.content_layout.addWidget(self.sapi_group)
 
-        self.system_prompt = QPlainTextEdit(self.config.get("system_prompt", ""))
+        assistant_personality_row = QHBoxLayout()
+        assistant_personality_row.addWidget(QLabel(self.t("assistant_personality_label", "Persönlichkeit der antwortenden LLM")), 1)
+        self.assistant_personality_combo = QComboBox()
+        self.assistant_personality_combo.setMinimumContentsLength(34)
+        self.assistant_personality_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._populate_personality_combo(
+            self.assistant_personality_combo,
+            "assistant",
+            str(self.config.get("assistant_personality_id", CUSTOM_PERSONALITY_ID) or CUSTOM_PERSONALITY_ID),
+        )
+        self.assistant_personality_combo.setToolTip(self.t("assistant_personality_tooltip", "Bestimmt die Grundpersönlichkeit der LLM, die auf Benutzer- und Auto-Answer-Nachrichten antwortet."))
+        assistant_personality_row.addWidget(self.assistant_personality_combo, 2)
+        self.edit_assistant_personalities_btn = QPushButton(self.t("personality_editor_open", "Charakter-/Persönlichkeitseditor …"))
+        self.edit_assistant_personalities_btn.clicked.connect(lambda: self.open_personality_editor("assistant"))
+        assistant_personality_row.addWidget(self.edit_assistant_personalities_btn)
+        self.content_layout.addLayout(assistant_personality_row)
+
+        self.system_prompt = QPlainTextEdit()
         self.system_prompt.setPlaceholderText(self.t("system_prompt_placeholder", "Optionaler System-Prompt für neue Anfragen"))
-        self.system_prompt.setFixedHeight(110)
+        self.system_prompt.setFixedHeight(130)
+        self.system_prompt.setToolTip(self.t("personality_prompt_preview_tooltip", "Bei einem Preset ist dies eine schreibgeschützte Vorschau. Für freie Eingaben 'Benutzerdefiniert' wählen."))
         add_row(self.t("system_prompt_label", "System-Prompt"), self.system_prompt)
+        self.assistant_personality_combo.currentIndexChanged.connect(self._on_assistant_personality_changed)
+        self._apply_personality_selection("assistant", preserve_custom=True)
+        self.interface_language.currentIndexChanged.connect(self._refresh_personality_language)
 
         self.persistent_knowledge_enabled = QCheckBox(self.t("persistent_knowledge_enabled_label", "Permanentes Langzeitgedächtnis / chatübergreifendes RAG aktiv"))
         self.persistent_knowledge_enabled.setChecked(bool(self.config.get("persistent_knowledge_enabled", False)))
@@ -1783,7 +1978,11 @@ class SettingsDialog(QDialog):
         self.content_layout.addStretch(1)
 
         self.tts_backend.currentIndexChanged.connect(self.refresh_tts_voice_options)
+        self.crispasr_tts_model.currentIndexChanged.connect(self.refresh_tts_voice_options)
+        self.asr_backend.currentIndexChanged.connect(self.refresh_asr_options)
+        self.asr_model.currentIndexChanged.connect(self.refresh_asr_options)
         self.refresh_tts_voice_options()
+        self.refresh_asr_options()
 
         buttons = QHBoxLayout()
         buttons.addStretch()
@@ -1857,6 +2056,24 @@ class SettingsDialog(QDialog):
     def current_tts_backend(self) -> str:
         return (self.tts_backend.currentData() or self.tts_backend.currentText() or "disabled").strip()
 
+    def _populate_voice_style_combo(self, combo: QComboBox, selected: str) -> None:
+        labels = {
+            "natural": self.t("tts_style_natural", "Natürlich / unverändert"),
+            "masculine": self.t("tts_style_masculine", "Tief / männlich"),
+            "feminine": self.t("tts_style_feminine", "Hell / weiblich"),
+            "narrator": self.t("tts_style_narrator", "Ruhiger Erzähler"),
+            "dramatic": self.t("tts_style_dramatic", "Dramatisch"),
+            "robotic": self.t("tts_style_robotic", "Robotisch"),
+            "tipsy": self.t("tts_style_tipsy", "Angetrunken / schwankend"),
+            "comic": self.t("tts_style_comic", "Comic / überzeichnet"),
+            "whisper": self.t("tts_style_whisper", "Leise / flüsternd"),
+        }
+        combo.clear()
+        for style_id in VOICE_STYLE_IDS:
+            combo.addItem(labels.get(style_id, style_id), style_id)
+        index = combo.findData(selected)
+        combo.setCurrentIndex(index if index >= 0 else 0)
+
     def _combo_value(self, combo: QComboBox) -> str:
         idx = combo.currentIndex()
         current_text = combo.currentText().strip()
@@ -1900,7 +2117,7 @@ class SettingsDialog(QDialog):
         backend = self.current_tts_backend()
         current_voice = self._current_voice_value() or self.config.get("tts_voice", "")
         current_user_voice = self._current_user_voice_value() or self.config.get("tts_user_voice", "") or current_voice
-        if backend == "vibevoice_openai":
+        if backend in {"vibevoice_openai", "crispasr_openai"}:
             if str(current_voice).startswith(("sapi::", "onecore::")):
                 current_voice = ""
             if str(current_user_voice).startswith(("sapi::", "onecore::")):
@@ -1915,13 +2132,17 @@ class SettingsDialog(QDialog):
         elif backend == "vibevoice_openai":
             hint = self.t("tts_hint_vibevoice", "Benötigt den lokalen VibeVoice-Wrapper. Stimmen aus app_data/tts/vibevoice_openai/models/voices werden zusätzlich erkannt; falls sie nur als lokale Datei erscheinen, den Wrapper einmal neu starten. Zusätzliche offizielle Presets werden beim VibeVoice-Install/Update automatisch mitgeladen.")
             default_voice = "Emma"
+        elif backend == "crispasr_openai":
+            selected_model = get_vibevoice_tts_model(self.crispasr_tts_model.currentData())
+            hint = self.t("tts_hint_crispasr", "Uses the verified CrispASR VibeVoice backend. Realtime 0.5B accepts its matching preset voice packs; 1.5B uses its generic voice unless an authorised WAV reference is configured outside the app.")
+            default_voice = "default" if selected_model.voice_mode == "reference_wav" else "Emma"
         else:
             hint = self.t("tts_hint_disabled", "TTS ist deaktiviert.")
 
         try:
             client = TTSClient(
                 backend=backend,
-                base_url=self.tts_url.text().strip() or self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
+                base_url=(self.crispasr_tts_url.text().strip() if backend == "crispasr_openai" else self.tts_url.text().strip()) or self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
                 voice=current_voice or self.config.get("tts_voice", default_voice),
                 model=self.tts_model.currentText().strip() or self.config.get("tts_model", "tts-1-hd"),
                 audio_format=self.config.get("tts_format", "wav"),
@@ -1932,14 +2153,21 @@ class SettingsDialog(QDialog):
                 hint += " " + self.t("tts_windows_voices_error", "Stimmen konnten gerade nicht gelesen werden: {error}").format(error=exc)
             elif backend == "vibevoice_openai":
                 hint += " " + self.t("tts_wrapper_not_running", "Der Wrapper scheint aktuell nicht zu laufen oder ist noch nicht eingerichtet.")
+            elif backend == "crispasr_openai":
+                hint += " " + self.t("crispasr_not_running", "CrispASR is not running yet; it will be started on first playback after setup.")
 
         self.tts_hint.setText(hint)
         config_voice = self.config.get("tts_voice", default_voice)
         config_user_voice = self.config.get("tts_user_voice", "") or config_voice
-        if backend == "vibevoice_openai" and str(config_voice).startswith(("sapi::", "onecore::")):
+        if backend in {"vibevoice_openai", "crispasr_openai"} and str(config_voice).startswith(("sapi::", "onecore::")):
             config_voice = default_voice
-        if backend == "vibevoice_openai" and str(config_user_voice).startswith(("sapi::", "onecore::")):
+        if backend in {"vibevoice_openai", "crispasr_openai"} and str(config_user_voice).startswith(("sapi::", "onecore::")):
             config_user_voice = config_voice
+        if backend == "crispasr_openai" and default_voice == "default":
+            config_voice = "default"
+            config_user_voice = "default"
+            current_voice = "default"
+            current_user_voice = "default"
         if backend == "windows_sapi" and voice_entries:
             language_code = (self.interface_language.currentData() or self.config.get("interface_language", "de") or "de").strip()
             if not str(config_voice).strip():
@@ -1954,14 +2182,56 @@ class SettingsDialog(QDialog):
         self.tts_voice_row.setVisible(visible)
         self.user_tts_voice_row.setVisible(visible)
         self.tts_model_row.setVisible(backend == "vibevoice_openai")
-        self.sapi_group.setVisible(backend == "windows_sapi")
-        self.open_tts_setup_btn.setVisible(backend == "vibevoice_openai")
+        self.vibevoice_model_path_row.setVisible(backend == "vibevoice_openai")
+        self.tts_url_row.setVisible(backend == "vibevoice_openai")
+        self.crispasr_tts_url_row.setVisible(backend == "crispasr_openai")
+        self.crispasr_tts_model_row.setVisible(backend == "crispasr_openai")
+        self.sapi_group.setVisible(visible)
+        self.open_tts_setup_btn.setVisible(backend in {"vibevoice_openai", "crispasr_openai"})
+        self.open_tts_setup_btn.setText(self.t("speech_runtime_setup", "Install / update CrispASR …") if backend == "crispasr_openai" else self.t("vibevoice_setup_open", "Open VibeVoice setup …"))
+
+    def refresh_asr_options(self) -> None:
+        enabled = (self.asr_backend.currentData() or "disabled") != "disabled"
+        current_language = str(self.asr_language.currentData() or "auto")
+        selected_model = str(self.asr_model.currentData() or VIBEVOICE_ASR_MODELS[0].model_id)
+        allowed_languages = None
+        if selected_model == "vibevoice_asr_bitnet":
+            allowed_languages = {"auto", "en", "zh", "fr", "it", "ko", "pt", "vi"}
+        self.asr_language.blockSignals(True)
+        self.asr_language.clear()
+        for code, label in self.asr_language_options:
+            if allowed_languages is None or code in allowed_languages:
+                self.asr_language.addItem(label, code)
+        language_index = self.asr_language.findData(current_language)
+        self.asr_language.setCurrentIndex(language_index if language_index >= 0 else 0)
+        self.asr_language.blockSignals(False)
+        self.asr_model_row.setVisible(enabled)
+        self.asr_url_row.setVisible(enabled)
+        self.asr_language_row.setVisible(enabled)
+        self.open_speech_setup_btn.setVisible(enabled)
+        self.asr_hint.setVisible(enabled)
 
     def open_tts_setup(self) -> None:
+        if self.current_tts_backend() == "crispasr_openai":
+            self.open_speech_setup()
+            return
         if self.open_tts_setup_callback is None:
             QMessageBox.information(self, self.t("tts_setup_unavailable_title", "TTS-Setup"), self.t("tts_setup_unavailable_text", "Der TTS-Setup-Assistent ist hier nicht verfügbar."))
             return
+        model_path = self.vibevoice_model_path.currentText().strip() or "microsoft/VibeVoice-Realtime-0.5B"
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "config"):
+            parent.config["vibevoice_model_path"] = model_path
         self.open_tts_setup_callback()
+        if parent is not None and hasattr(parent, "config"):
+            updated = str(parent.config.get("vibevoice_model_path", model_path) or model_path)
+            self._set_combo_text_value(self.vibevoice_model_path, updated)
+
+    def open_speech_setup(self) -> None:
+        if self.open_speech_setup_callback is None:
+            QMessageBox.information(self, self.t("speech_runtime_setup", "CrispASR setup"), self.t("speech_setup_unavailable", "The CrispASR setup is not available here."))
+            return
+        self.open_speech_setup_callback()
 
     def edit_sapi_lexicon(self) -> None:
         dialog = LexiconEditorDialog(self.config.get("interface_language", "de"), self)
@@ -1986,6 +2256,106 @@ class SettingsDialog(QDialog):
         dialog = AutoAnswerShortPromptDialog(self.config, self.current_settings_language_code(), self)
         dialog.exec()
 
+    def _personality_gender_label(self, gender: str) -> str:
+        return {
+            "female": self.t("personality_gender_female", "Weiblich"),
+            "male": self.t("personality_gender_male", "Männlich"),
+            "neutral": self.t("personality_gender_neutral", "Neutral"),
+        }.get(str(gender or "neutral"), str(gender or "neutral"))
+
+    def _populate_personality_combo(self, combo: QComboBox, role: str, selected_id: str) -> None:
+        language_code = self.current_settings_language_code()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(self.t("personality_custom", "Benutzerdefiniert / eigener Prompt"), CUSTOM_PERSONALITY_ID)
+        for personality in load_personalities(role):
+            label = self.t("personality_combo_item", "{name} · {gender}").format(
+                name=personality.localized_name(language_code),
+                gender=self._personality_gender_label(personality.gender),
+            )
+            combo.addItem(label, personality.personality_id)
+            index = combo.count() - 1
+            combo.setItemData(index, personality.localized_description(language_code), Qt.ItemDataRole.ToolTipRole)
+        index = combo.findData(selected_id)
+        combo.setCurrentIndex(index if index >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _apply_personality_selection(self, role: str, preserve_custom: bool = False) -> None:
+        language_code = self.current_settings_language_code()
+        if role == "user":
+            if not hasattr(self, "user_personality_combo") or not hasattr(self, "auto_answer_llm_system_prompt"):
+                return
+            combo = self.user_personality_combo
+            editor = self.auto_answer_llm_system_prompt
+            previous_id = getattr(self, "_last_user_personality_id", CUSTOM_PERSONALITY_ID)
+            if not preserve_custom and previous_id == CUSTOM_PERSONALITY_ID and not editor.isReadOnly():
+                self._custom_user_personality_prompt = editor.toPlainText()
+            selected_id = str(combo.currentData() or CUSTOM_PERSONALITY_ID)
+            if selected_id == CUSTOM_PERSONALITY_ID:
+                editor.setReadOnly(False)
+                editor.setPlainText(self._custom_user_personality_prompt)
+            else:
+                personality = load_personality("user", selected_id)
+                editor.setReadOnly(True)
+                editor.setPlainText(render_personality_prompt(personality, language_code) if personality else self._custom_user_personality_prompt)
+            self._last_user_personality_id = selected_id
+            return
+
+        if not hasattr(self, "assistant_personality_combo") or not hasattr(self, "system_prompt"):
+            return
+        combo = self.assistant_personality_combo
+        editor = self.system_prompt
+        previous_id = getattr(self, "_last_assistant_personality_id", CUSTOM_PERSONALITY_ID)
+        if not preserve_custom and previous_id == CUSTOM_PERSONALITY_ID and not editor.isReadOnly():
+            self._custom_assistant_personality_prompt = editor.toPlainText()
+        selected_id = str(combo.currentData() or CUSTOM_PERSONALITY_ID)
+        if selected_id == CUSTOM_PERSONALITY_ID:
+            editor.setReadOnly(False)
+            editor.setPlainText(self._custom_assistant_personality_prompt)
+        else:
+            personality = load_personality("assistant", selected_id)
+            editor.setReadOnly(True)
+            editor.setPlainText(render_personality_prompt(personality, language_code) if personality else self._custom_assistant_personality_prompt)
+        self._last_assistant_personality_id = selected_id
+
+    def _on_user_personality_changed(self, _index: int) -> None:
+        self._apply_personality_selection("user")
+
+    def _on_assistant_personality_changed(self, _index: int) -> None:
+        self._apply_personality_selection("assistant")
+
+    def _refresh_personality_language(self, _index: int = -1) -> None:
+        if not hasattr(self, "user_personality_combo") or not hasattr(self, "assistant_personality_combo"):
+            return
+        user_id = str(self.user_personality_combo.currentData() or CUSTOM_PERSONALITY_ID)
+        assistant_id = str(self.assistant_personality_combo.currentData() or CUSTOM_PERSONALITY_ID)
+        if user_id == CUSTOM_PERSONALITY_ID and not self.auto_answer_llm_system_prompt.isReadOnly():
+            self._custom_user_personality_prompt = self.auto_answer_llm_system_prompt.toPlainText()
+        if assistant_id == CUSTOM_PERSONALITY_ID and not self.system_prompt.isReadOnly():
+            self._custom_assistant_personality_prompt = self.system_prompt.toPlainText()
+        self._populate_personality_combo(self.user_personality_combo, "user", user_id)
+        self._populate_personality_combo(self.assistant_personality_combo, "assistant", assistant_id)
+        self._last_user_personality_id = user_id
+        self._last_assistant_personality_id = assistant_id
+        self._apply_personality_selection("user", preserve_custom=True)
+        self._apply_personality_selection("assistant", preserve_custom=True)
+
+    def open_personality_editor(self, role: str) -> None:
+        user_id = str(self.user_personality_combo.currentData() or CUSTOM_PERSONALITY_ID)
+        assistant_id = str(self.assistant_personality_combo.currentData() or CUSTOM_PERSONALITY_ID)
+        if user_id == CUSTOM_PERSONALITY_ID and not self.auto_answer_llm_system_prompt.isReadOnly():
+            self._custom_user_personality_prompt = self.auto_answer_llm_system_prompt.toPlainText()
+        if assistant_id == CUSTOM_PERSONALITY_ID and not self.system_prompt.isReadOnly():
+            self._custom_assistant_personality_prompt = self.system_prompt.toPlainText()
+        dialog = PersonalityEditorDialog(self.current_settings_language_code(), self.t, role, self)
+        dialog.exec()
+        self._populate_personality_combo(self.user_personality_combo, "user", user_id)
+        self._populate_personality_combo(self.assistant_personality_combo, "assistant", assistant_id)
+        self._last_user_personality_id = user_id
+        self._last_assistant_personality_id = assistant_id
+        self._apply_personality_selection("user", preserve_custom=True)
+        self._apply_personality_selection("assistant", preserve_custom=True)
+
     def _refresh_name_placeholders(self) -> None:
         lang = (self.interface_language.currentData() or self.config.get("interface_language", "de") or "de").strip()
         user_default, assistant_default = default_role_names(lang)
@@ -2006,8 +2376,7 @@ class SettingsDialog(QDialog):
             combo.setCurrentText(value)
 
     def apply_config_to_widgets(self, profile_data: dict) -> None:
-        merged = DEFAULT_CONFIG.copy()
-        merged.update(profile_data or {})
+        merged = normalize_config(profile_data or {})
         if "tts_lexicon_enabled" not in merged:
             merged["tts_lexicon_enabled"] = bool(merged.get("windows_sapi_lexicon_enabled", True))
         merged["windows_sapi_lexicon_enabled"] = bool(merged.get("tts_lexicon_enabled", True))
@@ -2022,7 +2391,14 @@ class SettingsDialog(QDialog):
         self.ollama_url.setText(str(merged.get("ollama_base_url", DEFAULT_CONFIG["ollama_base_url"]) or DEFAULT_CONFIG["ollama_base_url"]))
         self._set_combo_data_value(self.tts_backend, merged.get("tts_backend", "disabled"), 0)
         self.tts_url.setText(str(merged.get("tts_base_url", DEFAULT_CONFIG["tts_base_url"]) or DEFAULT_CONFIG["tts_base_url"]))
+        self.crispasr_tts_url.setText(str(merged.get("crispasr_tts_base_url", DEFAULT_CONFIG["crispasr_tts_base_url"]) or DEFAULT_CONFIG["crispasr_tts_base_url"]))
         self._set_combo_text_value(self.tts_model, str(merged.get("tts_model", DEFAULT_CONFIG["tts_model"]) or DEFAULT_CONFIG["tts_model"]))
+        self._set_combo_text_value(self.vibevoice_model_path, str(merged.get("vibevoice_model_path", DEFAULT_CONFIG["vibevoice_model_path"]) or DEFAULT_CONFIG["vibevoice_model_path"]))
+        self._set_combo_data_value(self.crispasr_tts_model, str(merged.get("vibevoice_crisp_tts_model", VIBEVOICE_TTS_MODELS[0].model_id)), 0)
+        self._set_combo_data_value(self.asr_backend, str(merged.get("asr_backend", "disabled")), 0)
+        self._set_combo_data_value(self.asr_model, str(merged.get("asr_model", VIBEVOICE_ASR_MODELS[0].model_id)), 0)
+        self._set_combo_data_value(self.asr_language, str(merged.get("asr_language", "auto")), 0)
+        self.asr_url.setText(str(merged.get("asr_base_url", DEFAULT_CONFIG["asr_base_url"]) or DEFAULT_CONFIG["asr_base_url"]))
 
         self.autoplay.setChecked(bool(merged.get("autoplay_tts", True)))
         self.auto_read_responses.setChecked(bool(merged.get("auto_read_assistant_responses", True)))
@@ -2054,7 +2430,7 @@ class SettingsDialog(QDialog):
             index = self.auto_answer_llm_model.count() - 1
         self.auto_answer_llm_model.setCurrentIndex(max(0, index))
         self.auto_answer_llm_max_tokens.setValue(int(merged.get("auto_answer_llm_max_tokens", DEFAULT_CONFIG["auto_answer_llm_max_tokens"]) or DEFAULT_CONFIG["auto_answer_llm_max_tokens"]))
-        self.auto_answer_llm_system_prompt.setPlainText(str(merged.get("auto_answer_llm_system_prompt", "") or ""))
+        self._custom_user_personality_prompt = str(merged.get("auto_answer_llm_system_prompt", "") or "")
         self.auto_answer_llm_include_recent_context.setChecked(bool(merged.get("auto_answer_llm_include_recent_context", True)))
         self._normalize_auto_answer_mix("init")
         self.auto_answer_phrase_repeat_lookback.setValue(safe_int(merged.get("auto_answer_phrase_repeat_lookback", DEFAULT_CONFIG["auto_answer_phrase_repeat_lookback"]), DEFAULT_CONFIG["auto_answer_phrase_repeat_lookback"]))
@@ -2066,7 +2442,24 @@ class SettingsDialog(QDialog):
         self.sapi_rate_slider.setValue(int(merged.get("windows_sapi_rate", 0) or 0))
         self.sapi_pitch_slider.setValue(safe_int(merged.get("windows_sapi_pitch", DEFAULT_CONFIG["windows_sapi_pitch"]), DEFAULT_CONFIG["windows_sapi_pitch"]))
         self.sapi_volume_slider.setValue(safe_int(merged.get("windows_sapi_volume", 100), 100))
-        self.system_prompt.setPlainText(str(merged.get("system_prompt", "") or ""))
+        self.sapi_user_rate_slider.setValue(safe_int(merged.get("windows_sapi_user_rate", 0), 0))
+        self.sapi_user_pitch_slider.setValue(safe_int(merged.get("windows_sapi_user_pitch", 0), 0))
+        self.sapi_user_volume_slider.setValue(safe_int(merged.get("windows_sapi_user_volume", 100), 100))
+        self.tts_assistant_style_intensity.setValue(safe_int(merged.get("tts_assistant_style_intensity", 65), 65))
+        self.tts_user_style_intensity.setValue(safe_int(merged.get("tts_user_style_intensity", 65), 65))
+        assistant_style_index = self.tts_assistant_style.findData(str(merged.get("tts_assistant_style", "natural")))
+        self.tts_assistant_style.setCurrentIndex(assistant_style_index if assistant_style_index >= 0 else 0)
+        user_style_index = self.tts_user_style.findData(str(merged.get("tts_user_style", "natural")))
+        self.tts_user_style.setCurrentIndex(user_style_index if user_style_index >= 0 else 0)
+        self._custom_assistant_personality_prompt = str(merged.get("system_prompt", "") or "")
+        user_personality_id = str(merged.get("user_personality_id", CUSTOM_PERSONALITY_ID) or CUSTOM_PERSONALITY_ID)
+        assistant_personality_id = str(merged.get("assistant_personality_id", CUSTOM_PERSONALITY_ID) or CUSTOM_PERSONALITY_ID)
+        self._populate_personality_combo(self.user_personality_combo, "user", user_personality_id)
+        self._populate_personality_combo(self.assistant_personality_combo, "assistant", assistant_personality_id)
+        self._last_user_personality_id = user_personality_id
+        self._last_assistant_personality_id = assistant_personality_id
+        self._apply_personality_selection("user", preserve_custom=True)
+        self._apply_personality_selection("assistant", preserve_custom=True)
 
         self._refresh_name_placeholders()
         self.tts_voice.clear()
@@ -2184,6 +2577,7 @@ class SettingsDialog(QDialog):
         data["ollama_base_url"] = self.ollama_url.text().strip()
         data["tts_backend"] = self.current_tts_backend()
         data["tts_base_url"] = self.tts_url.text().strip()
+        data["crispasr_tts_base_url"] = self.crispasr_tts_url.text().strip()
         voice_value = self._current_voice_value()
         user_voice_value = self._current_user_voice_value()
         if data["tts_backend"] == "windows_sapi":
@@ -2194,6 +2588,12 @@ class SettingsDialog(QDialog):
             data["tts_voice"] = voice_value or "Emma"
             data["tts_user_voice"] = user_voice_value or data["tts_voice"]
         data["tts_model"] = self.tts_model.currentText().strip() or "tts-1-hd"
+        data["vibevoice_model_path"] = self.vibevoice_model_path.currentText().strip() or "microsoft/VibeVoice-Realtime-0.5B"
+        data["vibevoice_crisp_tts_model"] = str(self.crispasr_tts_model.currentData() or VIBEVOICE_TTS_MODELS[0].model_id)
+        data["asr_backend"] = str(self.asr_backend.currentData() or "disabled")
+        data["asr_base_url"] = self.asr_url.text().strip()
+        data["asr_model"] = str(self.asr_model.currentData() or VIBEVOICE_ASR_MODELS[0].model_id)
+        data["asr_language"] = str(self.asr_language.currentData() or "auto")
         data["autoplay_tts"] = self.autoplay.isChecked()
         data["auto_read_assistant_responses"] = self.auto_read_responses.isChecked()
         data["auto_read_user_inputs"] = self.auto_read_user_inputs.isChecked()
@@ -2223,7 +2623,11 @@ class SettingsDialog(QDialog):
         first_auto_model_text = self.auto_answer_llm_model.itemText(0).strip() if self.auto_answer_llm_model.count() else ""
         data["auto_answer_llm_model"] = "" if selected_auto_model_data == "" and selected_auto_model_text == first_auto_model_text else str(selected_auto_model_data or selected_auto_model_text or "").strip()
         data["auto_answer_llm_max_tokens"] = int(self.auto_answer_llm_max_tokens.value())
-        data["auto_answer_llm_system_prompt"] = self.auto_answer_llm_system_prompt.toPlainText().strip()
+        user_personality_id = str(self.user_personality_combo.currentData() or CUSTOM_PERSONALITY_ID)
+        if user_personality_id == CUSTOM_PERSONALITY_ID and not self.auto_answer_llm_system_prompt.isReadOnly():
+            self._custom_user_personality_prompt = self.auto_answer_llm_system_prompt.toPlainText()
+        data["user_personality_id"] = user_personality_id
+        data["auto_answer_llm_system_prompt"] = self._custom_user_personality_prompt.strip()
         data["auto_answer_llm_include_recent_context"] = self.auto_answer_llm_include_recent_context.isChecked()
         data["auto_answer_phrase_repeat_lookback"] = int(self.auto_answer_phrase_repeat_lookback.value())
         data["context_message_limit"] = int(self.context_limit.value())
@@ -2233,8 +2637,19 @@ class SettingsDialog(QDialog):
         data["windows_sapi_rate"] = int(self.sapi_rate_slider.value())
         data["windows_sapi_pitch"] = int(self.sapi_pitch_slider.value())
         data["windows_sapi_volume"] = int(self.sapi_volume_slider.value())
+        data["windows_sapi_user_rate"] = int(self.sapi_user_rate_slider.value())
+        data["windows_sapi_user_pitch"] = int(self.sapi_user_pitch_slider.value())
+        data["windows_sapi_user_volume"] = int(self.sapi_user_volume_slider.value())
+        data["tts_assistant_style"] = str(self.tts_assistant_style.currentData() or "natural")
+        data["tts_user_style"] = str(self.tts_user_style.currentData() or "natural")
+        data["tts_assistant_style_intensity"] = int(self.tts_assistant_style_intensity.value())
+        data["tts_user_style_intensity"] = int(self.tts_user_style_intensity.value())
         data["tts_voice_defaults_initialized"] = True
-        data["system_prompt"] = self.system_prompt.toPlainText().strip()
+        assistant_personality_id = str(self.assistant_personality_combo.currentData() or CUSTOM_PERSONALITY_ID)
+        if assistant_personality_id == CUSTOM_PERSONALITY_ID and not self.system_prompt.isReadOnly():
+            self._custom_assistant_personality_prompt = self.system_prompt.toPlainText()
+        data["assistant_personality_id"] = assistant_personality_id
+        data["system_prompt"] = self._custom_assistant_personality_prompt.strip()
         return data
 
 
@@ -2242,17 +2657,18 @@ class TTSActionWorker(QObject):
     log = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, base_url: str, action: str, translations: dict[str, str] | None = None) -> None:
+    def __init__(self, base_url: str, action: str, translations: dict[str, str] | None = None, model_path: str = "microsoft/VibeVoice-Realtime-0.5B") -> None:
         super().__init__()
         self.base_url = base_url
         self.action = action
         self.translations = translations or {}
+        self.model_path = model_path
 
     def t(self, key: str, default: str) -> str:
         return self.translations.get(key, default)
 
     def run(self) -> None:
-        manager = VibeVoiceManager(self.base_url, self.t)
+        manager = VibeVoiceManager(self.base_url, self.t, self.model_path)
         try:
             if self.action == "auto_setup":
                 success, message = manager.auto_setup(self.log.emit)
@@ -2264,7 +2680,7 @@ class TTSActionWorker(QObject):
                 manager.install_ffmpeg_via_winget(self.log.emit)
                 self.finished.emit(True, self.t("tts_setup_ffmpeg_done", "FFmpeg-Installation abgeschlossen oder übersprungen."))
             elif self.action == "start":
-                ok, msg = manager.start_server_and_wait(self.log.emit, max_wait=120)
+                ok, msg = manager.start_server_and_wait(self.log.emit, max_wait=1800)
                 if ok:
                     self.finished.emit(True, self.t("tts_setup_start_done", "VibeVoice server is ready.") + (f" ({msg})" if msg else ""))
                 else:
@@ -2454,6 +2870,23 @@ class TTSSetupDialog(QDialog):
         info.setWordWrap(True)
         root.addWidget(info)
 
+        model_row = QHBoxLayout()
+        model_row.addWidget(QLabel(self.t("vibevoice_model_path_label", "VibeVoice TTS checkpoint / model path")), 1)
+        self.model_path_combo = QComboBox()
+        self.model_path_combo.setEditable(False)
+        self.model_path_combo.addItem(PYTHON_REALTIME_TTS_MODEL)
+        current_model_path = PYTHON_REALTIME_TTS_MODEL
+        self.model_path_combo.setCurrentText(current_model_path)
+        model_row.addWidget(self.model_path_combo, 2)
+        root.addLayout(model_row)
+        model_hint = QLabel(self.t(
+            "vibevoice_model_compatibility_hint",
+            "The wrapper currently supports Microsoft VibeVoice Realtime streaming TTS checkpoints. ASR models such as VibeVoice-ASR-BitNet-slim perform speech recognition and are therefore intentionally not offered as speech-output models.",
+        ))
+        model_hint.setObjectName("SubtleLabel")
+        model_hint.setWordWrap(True)
+        root.addWidget(model_hint)
+
         self.status_label = QLabel()
         self.status_label.setObjectName("SubtleLabel")
         self.status_label.setWordWrap(True)
@@ -2516,7 +2949,8 @@ class TTSSetupDialog(QDialog):
         return self.translations.get(key, default or key)
 
     def manager(self) -> VibeVoiceManager:
-        return VibeVoiceManager(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), self.t)
+        model_path = self.model_path_combo.currentText().strip() or "microsoft/VibeVoice-Realtime-0.5B"
+        return VibeVoiceManager(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), self.t, model_path)
 
     def append_log(self, text: str) -> None:
         self.log_box.appendPlainText(text)
@@ -2538,6 +2972,7 @@ class TTSSetupDialog(QDialog):
             self.t("tts_setup_status_pid", "PID-Datei/Prozess aktiv: {value}").format(value=yes if status.pid_running else no),
             self.t("tts_setup_status_repo_dir", "Repo-Ordner: {value}").format(value=status.repo_dir),
             self.t("tts_setup_status_models_dir", "Modelle-Ordner: {value}").format(value=status.models_dir),
+            self.t("tts_setup_status_model_path", "Aktives TTS-Checkpoint: {value}").format(value=status.model_path),
             self.t("tts_setup_status_log", "Logdatei: {value}").format(value=status.log_path),
         ]
         if status.health_ok:
@@ -2594,6 +3029,7 @@ class TTSSetupDialog(QDialog):
     def set_busy(self, busy: bool) -> None:
         for btn in [self.auto_setup_btn, self.start_btn, self.stop_btn, self.open_folder_btn, self.open_log_btn]:
             btn.setEnabled(not busy)
+        self.model_path_combo.setEnabled(not busy)
         if busy:
             self._elapsed_seconds = 0
             self.elapsed_label.setText(self.t("tts_setup_elapsed", "Verstrichen: {seconds} s").format(seconds=0))
@@ -2619,8 +3055,11 @@ class TTSSetupDialog(QDialog):
         self.progress_bar.setValue(5)
         self.set_busy(True)
 
+        model_path = self.model_path_combo.currentText().strip() or "microsoft/VibeVoice-Realtime-0.5B"
+        self.config["vibevoice_model_path"] = model_path
+        save_config(self.config)
         self.worker_thread = QThread(self)
-        self.worker = TTSActionWorker(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), action, self.translations)
+        self.worker = TTSActionWorker(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), action, self.translations, model_path)
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.started.connect(self.worker.run)
         self.worker.log.connect(self.append_log)
@@ -2691,6 +3130,9 @@ class MainWindow(QMainWindow):
     audio_error_signal = pyqtSignal(str)
     audio_status_signal = pyqtSignal(str)
     audio_feedback_signal = pyqtSignal(str, str)
+    asr_result_signal = pyqtSignal(str)
+    asr_error_signal = pyqtSignal(str)
+    asr_status_signal = pyqtSignal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -2716,6 +3158,8 @@ class MainWindow(QMainWindow):
         self.audio_generation_id = 0
         self.audio_stop_requested = False
         self.audio_playback_thread: Optional[threading.Thread] = None
+        self.microphone_recorder = None
+        self.asr_thread: Optional[threading.Thread] = None
         self.last_requested_model = (self.config.get("last_model", "") or "").strip()
         self.pending_auto_answer_source = ""
         self.auto_answer_llm_thread: Optional[QThread] = None
@@ -2748,6 +3192,9 @@ class MainWindow(QMainWindow):
         self.audio_error_signal.connect(self._on_audio_error)
         self.audio_status_signal.connect(self._on_audio_status)
         self.audio_feedback_signal.connect(self._on_audio_feedback)
+        self.asr_result_signal.connect(self._on_asr_result)
+        self.asr_error_signal.connect(self._on_asr_error)
+        self.asr_status_signal.connect(self._on_asr_status)
         self._tts_feedback_token = 0
         self._tts_feedback_elapsed_seconds = 0
         self.auto_answer_timer = QTimer(self)
@@ -3076,7 +3523,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        self.sidebar_title = QLabel(self.t("app_title", "OllamaVibeDesk"))
+        self.sidebar_title = QLabel(APP_TITLE_WITH_VERSION)
         self.sidebar_title.setObjectName("TitleLabel")
         layout.addWidget(self.sidebar_title)
 
@@ -3209,6 +3656,9 @@ class MainWindow(QMainWindow):
         self.context_menu_button.setText('+')
         self.context_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.context_menu_button.setToolTip(self.t("context_menu_button_tooltip", "Dateien, Medien und Langzeitgedächtnis verwalten"))
+        if hasattr(self, "microphone_btn") and not (self.microphone_recorder and self.microphone_recorder.recording):
+            self.microphone_btn.setToolTip(self.t("microphone_start_tooltip", "Start speech input"))
+            self.microphone_btn.setAccessibleName(self.t("microphone_accessible_name", "Microphone speech input"))
         self.context_menu = QMenu(self)
         self.action_add_context_files = self.context_menu.addAction(self.t("add_context_files", "Medien und Dateien hinzufügen …"))
         self.action_add_context_files.triggered.connect(self._choose_files_for_context)
@@ -3226,6 +3676,13 @@ class MainWindow(QMainWindow):
         self.action_clear_context_files.triggered.connect(self._clear_pending_context_attachments)
         self.context_menu_button.setMenu(self.context_menu)
         input_row.addWidget(self.context_menu_button, 0)
+
+        self.microphone_btn = QToolButton()
+        self.microphone_btn.setText("🎙")
+        self.microphone_btn.setToolTip(self.t("microphone_start_tooltip", "Start speech input"))
+        self.microphone_btn.setAccessibleName(self.t("microphone_accessible_name", "Microphone speech input"))
+        self.microphone_btn.clicked.connect(self.toggle_microphone_input)
+        input_row.addWidget(self.microphone_btn, 0)
 
         self.input_box = QPlainTextEdit()
         self.input_box.setPlaceholderText(self.t("composer_placeholder", "Nachricht schreiben …  (Strg+Enter zum Senden)"))
@@ -3305,6 +3762,91 @@ class MainWindow(QMainWindow):
 
         return frame
 
+    def toggle_microphone_input(self) -> None:
+        if self.config.get("asr_backend", "disabled") == "disabled":
+            QMessageBox.information(self, self.t("asr_disabled_title", "Speech input is disabled"), self.t("asr_disabled_text", "Enable VibeVoice ASR in Settings first."))
+            return
+        try:
+            if self.microphone_recorder is None:
+                from app.audio_recorder import MicrophoneRecorder
+                self.microphone_recorder = MicrophoneRecorder(self)
+            if self.microphone_recorder.recording:
+                audio_path = self.microphone_recorder.stop(AUDIO_DIR / f"voice_input_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}.wav")
+                self.microphone_btn.setEnabled(False)
+                self.microphone_btn.setText("…")
+                self.microphone_btn.setToolTip(self.t("asr_transcribing", "Transcribing speech …"))
+                self._start_asr_transcription(audio_path)
+            else:
+                self.microphone_recorder.start()
+                self.microphone_btn.setText("■")
+                self.microphone_btn.setToolTip(self.t("microphone_stop_tooltip", "Stop recording and transcribe"))
+                self.composer_state_label.setText(self.t("microphone_recording", "Recording microphone … click again to stop."))
+                self.statusBar().showMessage(self.t("microphone_recording", "Recording microphone … click again to stop."), 0)
+        except Exception as exc:
+            if self.microphone_recorder is not None:
+                self.microphone_recorder.cancel()
+            self._reset_microphone_button()
+            QMessageBox.warning(self, self.t("asr_error_title", "Speech recognition error"), str(exc))
+
+    def _start_asr_transcription(self, audio_path: Path) -> None:
+        if self.asr_thread is not None and self.asr_thread.is_alive():
+            self.asr_error_signal.emit(self.t("asr_busy", "Speech recognition is already running."))
+            return
+        config_snapshot = dict(self.config)
+
+        def worker_run() -> None:
+            try:
+                model = get_vibevoice_asr_model(config_snapshot.get("asr_model"))
+                manager = CrispASRManager(
+                    config_snapshot.get("asr_base_url", DEFAULT_CONFIG["asr_base_url"]),
+                    model,
+                    config_snapshot.get("crispasr_executable_path", ""),
+                )
+                self.asr_status_signal.emit(self.t("asr_runtime_check", "Checking the VibeVoice ASR runtime …"))
+                manager.ensure_server_running(lambda message: self.asr_status_signal.emit(message), max_wait=1800)
+                client = ASRClient(
+                    config_snapshot.get("asr_base_url", DEFAULT_CONFIG["asr_base_url"]),
+                    model.model_id,
+                    config_snapshot.get("asr_language", "auto"),
+                )
+                self.asr_status_signal.emit(self.t("asr_transcribing", "Transcribing speech …"))
+                result = client.transcribe(audio_path)
+                if not result:
+                    raise RuntimeError(self.t("asr_empty_result", "No speech was recognised."))
+                self.asr_result_signal.emit(result)
+            except Exception as exc:
+                self.asr_error_signal.emit(str(exc))
+
+        self.asr_thread = threading.Thread(target=worker_run, daemon=True)
+        self.asr_thread.start()
+
+    def _reset_microphone_button(self) -> None:
+        if not hasattr(self, "microphone_btn"):
+            return
+        self.microphone_btn.setEnabled(True)
+        self.microphone_btn.setText("🎙")
+        self.microphone_btn.setToolTip(self.t("microphone_start_tooltip", "Start speech input"))
+
+    def _on_asr_status(self, message: str) -> None:
+        self.composer_state_label.setText(message)
+        self.statusBar().showMessage(message, 0)
+
+    def _on_asr_result(self, text: str) -> None:
+        existing = self.input_box.toPlainText()
+        cursor = self.input_box.textCursor()
+        insert_text = text if not existing or existing.endswith((" ", "\n")) else " " + text
+        cursor.insertText(insert_text)
+        self.input_box.setTextCursor(cursor)
+        self._reset_microphone_button()
+        message = self.t("asr_inserted", "Recognised speech was inserted into the message field.")
+        self.composer_state_label.setText(message)
+        self.statusBar().showMessage(message, 3500)
+
+    def _on_asr_error(self, message: str) -> None:
+        self._reset_microphone_button()
+        self.composer_state_label.setText(self.t("composer_state_idle", "Ready."))
+        QMessageBox.warning(self, self.t("asr_error_title", "Speech recognition error"), message)
+
     def open_generated_code_folder(self) -> None:
         GENERATED_CODE_DIR.mkdir(parents=True, exist_ok=True)
         try:
@@ -3318,7 +3860,7 @@ class MainWindow(QMainWindow):
 
     def refresh_ui_texts(self) -> None:
         self.setWindowTitle(build_window_title())
-        self.sidebar_title.setText(self.t("app_title", "OllamaVibeDesk"))
+        self.sidebar_title.setText(APP_TITLE_WITH_VERSION)
         self.sidebar_subtitle.setText(self.t("sidebar_subtitle", "Lokale Chats · portable Daten · optionale WAV-Ausgabe"))
         self.new_chat_btn.setText(self.t("new_chat", "Neuer Chat"))
         self.delete_chat_btn.setText(self.t("delete_chat_button", "Löschen"))
@@ -3924,7 +4466,11 @@ class MainWindow(QMainWindow):
         return text_looks_like_code_request(self._latest_user_visible_text(), self.config.get("interface_language", "de"))
 
     def request_system_prompt(self) -> str:
-        base_prompt = str(self.config.get("system_prompt", "") or "").strip()
+        base_prompt = resolve_configured_personality_prompt(
+            self.config,
+            "assistant",
+            str(self.config.get("interface_language", "de") or "de"),
+        ).strip()
         if not self._should_use_auto_thinking_for_current_request():
             return base_prompt
         extra = code_request_instruction(self.config.get("interface_language", "de"))
@@ -4107,7 +4653,11 @@ class MainWindow(QMainWindow):
         self.read_aloud_message(message, show_disabled_message=False, allow_autoplay=True)
 
     def _auto_answer_llm_prompt(self) -> str:
-        custom = str(self.config.get("auto_answer_llm_system_prompt", "") or "").strip()
+        custom = resolve_configured_personality_prompt(
+            self.config,
+            "user",
+            str(self.config.get("interface_language", "de") or "de"),
+        ).strip()
         base = custom or self.t(
             "auto_answer_llm_default_system_prompt",
             "You simulate the human user in an ongoing conversation. Use the configured personality and reply with exactly one natural, concise user message. Never answer as the assistant, never add labels, quotes or explanations.",
@@ -4508,6 +5058,42 @@ class MainWindow(QMainWindow):
             return (self.config.get("tts_user_voice", "") or self.config.get("tts_voice", "")).strip()
         return (self.config.get("tts_voice", "")).strip()
 
+    def _tts_client_for_role(self, backend: str, voice: str, role: str) -> TTSClient:
+        is_user = role == "user"
+        base_url = self.config.get("crispasr_tts_base_url", DEFAULT_CONFIG["crispasr_tts_base_url"]) if backend == "crispasr_openai" else self.config.get("tts_base_url", "http://127.0.0.1:8880/v1")
+        return TTSClient(
+            backend=backend,
+            base_url=base_url,
+            voice=voice,
+            model=self.config.get("tts_model", "tts-1-hd"),
+            audio_format='wav',
+            windows_sapi_rate=int(self.config.get("windows_sapi_user_rate" if is_user else "windows_sapi_rate", 0)),
+            windows_sapi_pitch=int(self.config.get("windows_sapi_user_pitch" if is_user else "windows_sapi_pitch", 0)),
+            windows_sapi_volume=int(self.config.get("windows_sapi_user_volume" if is_user else "windows_sapi_volume", 100)),
+            windows_sapi_language=self.current_sapi_language_tag(),
+            voice_style=str(self.config.get("tts_user_style" if is_user else "tts_assistant_style", "natural")),
+            voice_style_intensity=int(self.config.get("tts_user_style_intensity" if is_user else "tts_assistant_style_intensity", 65)),
+        )
+
+    def _ensure_crispasr_tts_runtime(self) -> None:
+        model = get_vibevoice_tts_model(self.config.get("vibevoice_crisp_tts_model"))
+        manager = CrispASRManager(
+            self.config.get("crispasr_tts_base_url", DEFAULT_CONFIG["crispasr_tts_base_url"]),
+            model,
+            self.config.get("crispasr_executable_path", ""),
+        )
+        prep = self.t("crispasr_tts_prepare", "Checking the compatible CrispASR VibeVoice TTS runtime …")
+        self.statusBar().showMessage(prep, 0)
+        self.audio_feedback_signal.emit("checking", prep)
+        QApplication.processEvents()
+
+        def runtime_log(message: str) -> None:
+            self.statusBar().showMessage(message, 0)
+            self.audio_feedback_signal.emit("generating", message)
+            QApplication.processEvents()
+
+        manager.ensure_server_running(runtime_log, max_wait=1800)
+
     def _conversation_segments(self) -> List[dict]:
         segments: List[dict] = []
         if not self.current_session:
@@ -4558,17 +5144,7 @@ class MainWindow(QMainWindow):
         self.current_audio_sentences = sentences
         self.current_audio_sentence_index = start_sentence_index
 
-        client = TTSClient(
-            backend='windows_sapi',
-            base_url=self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
-            voice=self._tts_voice_for_message(message),
-            model=self.config.get("tts_model", "tts-1-hd"),
-            audio_format='wav',
-            windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-            windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
-            windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
-            windows_sapi_language=self.current_sapi_language_tag(),
-        )
+        client = self._tts_client_for_role('windows_sapi', self._tts_voice_for_message(message), message.role)
 
         def worker_run(gen_id: int, start_idx: int) -> None:
             try:
@@ -4639,16 +5215,10 @@ class MainWindow(QMainWindow):
                     target = AUDIO_DIR / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}_{index:03d}.wav"
                     progress_text = self.t("tts_feedback_generating_segment", "Sprachausgabe wird erzeugt … Segment {current}/{total}").format(current=processed_segments, total=total_segments)
                     self.audio_feedback_signal.emit('generating', progress_text)
-                    client = TTSClient(
-                        backend=backend,
-                        base_url=self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
-                        voice=voice or self.config.get("tts_voice", "Emma"),
-                        model=self.config.get("tts_model", "tts-1-hd"),
-                        audio_format='wav',
-                        windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
-                        windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
-                        windows_sapi_language=self.current_sapi_language_tag(),
+                    client = self._tts_client_for_role(
+                        backend,
+                        voice or self.config.get("tts_voice", "Emma"),
+                        str(segment.get("role", "assistant")),
                     )
                     path = client.synthesize_to_file(text, target)
                     if gen_id != self.audio_generation_id:
@@ -4661,6 +5231,11 @@ class MainWindow(QMainWindow):
                         raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}')
                     finally:
                         self.current_playback_stoppable = False
+                    if self.audio_stop_requested:
+                        if gen_id == self.audio_generation_id:
+                            self._clear_audio_state()
+                            self.audio_status_signal.emit(self.t("audio_stopped", "Audio gestoppt."))
+                        return
                     if primary_message is not None:
                         primary_message.audio_path = str(path)
                 if gen_id == self.audio_generation_id:
@@ -4687,7 +5262,11 @@ class MainWindow(QMainWindow):
             return
         self.stop_audio_playback(silent=True)
         if backend == "vibevoice_openai":
-            manager = VibeVoiceManager(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), self.t)
+            manager = VibeVoiceManager(
+                self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
+                self.t,
+                str(self.config.get("vibevoice_model_path", "microsoft/VibeVoice-Realtime-0.5B")),
+            )
             try:
                 prep = self.t("vibevoice_autostart_prepare", "Prüfe lokalen VibeVoice-Server …")
                 self.statusBar().showMessage(prep, 0)
@@ -4697,11 +5276,17 @@ class MainWindow(QMainWindow):
                     self.statusBar().showMessage(msg, 0)
                     self.audio_feedback_signal.emit('generating', msg)
                     QApplication.processEvents()
-                started = manager.ensure_server_running(_autostart_log, max_wait=120)
+                started = manager.ensure_server_running(_autostart_log, max_wait=1800)
                 if started:
                     self.statusBar().showMessage(self.t("vibevoice_autostart_ready", "VibeVoice wurde automatisch gestartet."), 3500)
             except Exception as exc:
                 QMessageBox.critical(self, self.t("tts_error_title", "TTS-Fehler"), self.t("vibevoice_autostart_failed_ui", "Der lokale VibeVoice-Server konnte nicht automatisch gestartet werden:") + f"\n\n{exc}")
+                return
+        elif backend == "crispasr_openai":
+            try:
+                self._ensure_crispasr_tts_runtime()
+            except Exception as exc:
+                QMessageBox.critical(self, self.t("tts_error_title", "TTS-Fehler"), self.t("crispasr_start_failed", "The compatible CrispASR TTS runtime could not be started:") + f"\n\n{exc}")
                 return
         if backend == "windows_sapi":
             self._start_windows_sapi_segments_playback(segments)
@@ -4737,16 +5322,10 @@ class MainWindow(QMainWindow):
                     text = str(segment.get("text", "")).strip()
                     if not text:
                         continue
-                    client = TTSClient(
-                        backend='windows_sapi',
-                        base_url=self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
-                        voice=str(segment.get("voice", "")).strip(),
-                        model=self.config.get("tts_model", "tts-1-hd"),
-                        audio_format='wav',
-                        windows_sapi_rate=int(self.config.get("windows_sapi_rate", 0)),
-                        windows_sapi_pitch=int(self.config.get("windows_sapi_pitch", 0)),
-                        windows_sapi_volume=int(self.config.get("windows_sapi_volume", 100)),
-                        windows_sapi_language=self.current_sapi_language_tag(),
+                    client = self._tts_client_for_role(
+                        'windows_sapi',
+                        str(segment.get("voice", "")).strip(),
+                        str(segment.get("role", "assistant")),
                     )
                     for sentence in split_tts_sentences(text):
                         if gen_id != self.audio_generation_id:
@@ -4891,7 +5470,11 @@ class MainWindow(QMainWindow):
             return
 
         if backend == "vibevoice_openai":
-            manager = VibeVoiceManager(self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"), self.t)
+            manager = VibeVoiceManager(
+                self.config.get("tts_base_url", "http://127.0.0.1:8880/v1"),
+                self.t,
+                str(self.config.get("vibevoice_model_path", "microsoft/VibeVoice-Realtime-0.5B")),
+            )
             try:
                 prep = self.t("vibevoice_autostart_prepare", "Prüfe lokalen VibeVoice-Server …")
                 self.statusBar().showMessage(prep, 0)
@@ -4901,7 +5484,7 @@ class MainWindow(QMainWindow):
                     self.statusBar().showMessage(msg, 0)
                     self.audio_feedback_signal.emit('generating', msg)
                     QApplication.processEvents()
-                started = manager.ensure_server_running(_autostart_log, max_wait=120)
+                started = manager.ensure_server_running(_autostart_log, max_wait=1800)
                 if started:
                     self.statusBar().showMessage(self.t("vibevoice_autostart_ready", "VibeVoice wurde automatisch gestartet."), 3500)
             except Exception as exc:
@@ -4909,6 +5492,16 @@ class MainWindow(QMainWindow):
                     self,
                     self.t("tts_error_title", "TTS-Fehler"),
                     self.t("vibevoice_autostart_failed_ui", "Der lokale VibeVoice-Server konnte nicht automatisch gestartet werden:") + f"\n\n{exc}",
+                )
+                return
+        elif backend == "crispasr_openai":
+            try:
+                self._ensure_crispasr_tts_runtime()
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    self.t("tts_error_title", "TTS-Fehler"),
+                    self.t("crispasr_start_failed", "The compatible CrispASR TTS runtime could not be started:") + f"\n\n{exc}",
                 )
                 return
 
@@ -4989,7 +5582,14 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.t("audio_saved_playback_failed", 'Audio wurde gespeichert, Playback schlug fehl: {error}').format(error=exc), 6000)
 
     def show_settings(self) -> None:
-        dialog = SettingsDialog(self.config, self, self.show_tts_setup, [self.model_combo.itemText(i) for i in range(self.model_combo.count())], self.hardware_profile)
+        dialog = SettingsDialog(
+            self.config,
+            self,
+            open_tts_setup_callback=self.show_tts_setup,
+            open_speech_setup_callback=self.show_speech_setup,
+            model_names=[self.model_combo.itemText(i) for i in range(self.model_combo.count())],
+            hardware_profile=self.hardware_profile,
+        )
         if dialog.exec():
             old_config = dict(self.config)
             old_lang = old_config.get("interface_language", "de")
@@ -5011,10 +5611,12 @@ class MainWindow(QMainWindow):
             lang_changed = old_lang != self.config.get("interface_language", "de")
             theme_changed = old_theme != self.config.get("theme", "Midnight")
             tts_keys = {
-                "tts_backend", "tts_base_url", "tts_voice", "tts_model", "tts_format",
+                "tts_backend", "tts_base_url", "crispasr_tts_base_url", "tts_voice", "tts_model", "tts_format", "vibevoice_model_path", "vibevoice_crisp_tts_model",
                 "autoplay_tts", "auto_read_assistant_responses", "auto_read_user_inputs",
                 "tts_user_voice", "tts_lexicon_enabled", "windows_sapi_lexicon_enabled", "windows_sapi_rate",
-                "windows_sapi_pitch", "windows_sapi_volume", "read_all_include_names",
+                "windows_sapi_pitch", "windows_sapi_volume", "windows_sapi_user_rate",
+                "windows_sapi_user_pitch", "windows_sapi_user_volume", "tts_assistant_style",
+                "tts_user_style", "tts_assistant_style_intensity", "tts_user_style_intensity", "read_all_include_names",
                 "user_display_name", "assistant_display_name", "strip_emojis_for_tts",
                 "tts_voice_defaults_initialized"
             }
@@ -5071,6 +5673,31 @@ class MainWindow(QMainWindow):
         dialog = TTSSetupDialog(self.config, self)
         dialog.exec()
 
+    def show_speech_setup(self) -> None:
+        executable = find_crispasr_executable(self.config.get("crispasr_executable_path", ""))
+        if executable is not None:
+            QMessageBox.information(
+                self,
+                self.t("speech_runtime_ready_title", "CrispASR is installed"),
+                self.t("speech_runtime_ready_text", "The compatible speech runtime is ready at:\n{path}\n\nModels are downloaded by CrispASR on first use.").format(path=executable),
+            )
+            return
+        if not sys.platform.startswith("win"):
+            QMessageBox.information(self, self.t("speech_runtime_setup", "CrispASR setup"), self.t("speech_runtime_windows_only", "The included automatic CrispASR installer is intended for Windows."))
+            return
+        installer = Path(__file__).resolve().parent.parent / "install_crispasr_windows.bat"
+        if not installer.exists():
+            QMessageBox.warning(self, self.t("speech_runtime_setup", "CrispASR setup"), self.t("speech_setup_missing", "The CrispASR installer is missing."))
+            return
+        reply = QMessageBox.question(
+            self,
+            self.t("speech_runtime_setup", "Install / update CrispASR"),
+            self.t("speech_runtime_install_confirm", "Install the CPU-legacy build now? It does not require AVX2. GPU variants can be selected by starting the installer with 'vulkan' or 'cuda'."),
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        subprocess.Popen(["cmd.exe", "/c", "start", "", str(installer)], cwd=str(installer.parent))
+
     def closeEvent(self, event) -> None:
         if self.worker is not None:
             self.worker.cancel()
@@ -5080,6 +5707,8 @@ class MainWindow(QMainWindow):
             self.auto_answer_llm_thread.requestInterruption()
         self.auto_answer_timer.stop()
         self.stop_audio_playback(silent=True)
+        if self.microphone_recorder is not None:
+            self.microphone_recorder.cancel()
 
         active_threads = [
             thread for thread in (self.worker_thread, self.auto_answer_llm_thread)

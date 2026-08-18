@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import requests
 
 from .config import APP_DATA_DIR, CACHE_DIR
+from .speech_models import PYTHON_REALTIME_TTS_MODEL
 
 GITHUB_ZIP_URL = "https://codeload.github.com/marhensa/vibevoice-realtime-openai-api/zip/refs/heads/main"
 OFFICIAL_VIBEVOICE_VOICE_BASE = "https://raw.githubusercontent.com/microsoft/VibeVoice/main/demo/voices/streaming_model"
@@ -59,17 +60,31 @@ class TTSStatus:
     repo_dir: str
     models_dir: str
     log_path: str
+    model_path: str
 
 
 class VibeVoiceManager:
-    def __init__(self, base_url: str, translate: Optional[Callable[[str, str], str]] = None) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        translate: Optional[Callable[[str, str], str]] = None,
+        model_path: str = PYTHON_REALTIME_TTS_MODEL,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self._translate = translate or (lambda key, default='': default or key)
+        requested_model = (model_path or PYTHON_REALTIME_TTS_MODEL).strip()
+        if requested_model != PYTHON_REALTIME_TTS_MODEL:
+            raise ValueError(
+                f"The Python realtime wrapper only supports {PYTHON_REALTIME_TTS_MODEL}; "
+                "use the CrispASR backend for compatible GGUF alternatives."
+            )
+        self.model_path = requested_model
         self.root_dir = APP_DATA_DIR / "tts" / "vibevoice_openai"
         self.repo_dir = self.root_dir / "repo"
         self.models_dir = self.root_dir / "models"
         self.log_path = self.root_dir / "server.log"
         self.pid_path = self.root_dir / "server.pid"
+        self.active_model_path = self.root_dir / "active_model.txt"
         self.repo_zip_path = CACHE_DIR / "vibevoice_openai_api_main.zip"
 
     def t(self, key: str, default: str) -> str:
@@ -124,8 +139,17 @@ class VibeVoiceManager:
     def ensure_server_running(self, log: Callable[[str], None], max_wait: int = 120) -> bool:
         ok, msg = self.healthcheck(timeout=2.0)
         if ok:
-            log(self.t("vv_server_already", "TTS-Server antwortet bereits."))
-            return False
+            stored_model = ""
+            try:
+                stored_model = self.active_model_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+            if stored_model and stored_model != self.model_path and self.is_pid_running():
+                log(self.t("vv_model_changed_restart", "Das gewählte TTS-Checkpoint wurde geändert. Der lokale Server wird neu gestartet …"))
+                self.stop_server(log)
+            else:
+                log(self.t("vv_server_already", "TTS-Server antwortet bereits."))
+                return False
         log(self.t("vv_autostart_needed", "VibeVoice ist noch nicht erreichbar. Automatischer Start wird versucht …"))
         self.start_server(log)
         ok, msg = self.healthcheck(timeout=2.0)
@@ -150,6 +174,7 @@ class VibeVoiceManager:
             repo_dir=str(self.repo_dir),
             models_dir=str(self.models_dir),
             log_path=str(self.log_path),
+            model_path=self.model_path,
         )
 
     def _decode_output(self, data: bytes | None) -> str:
@@ -218,11 +243,13 @@ class VibeVoiceManager:
     def download_repo_zip(self, log: Callable[[str], None]) -> Path:
         self.ensure_dirs()
         log(self.t("vv_download_repo", "Downloade Wrapper-Archiv: {url}").format(url=GITHUB_ZIP_URL))
+        partial_path = self.repo_zip_path.with_suffix(self.repo_zip_path.suffix + ".part")
+        partial_path.unlink(missing_ok=True)
         with requests.get(GITHUB_ZIP_URL, stream=True, timeout=60) as response:
             response.raise_for_status()
             total = int(response.headers.get("Content-Length", "0") or "0")
             downloaded = 0
-            with open(self.repo_zip_path, "wb") as handle:
+            with open(partial_path, "wb") as handle:
                 for chunk in response.iter_content(chunk_size=1024 * 256):
                     if not chunk:
                         continue
@@ -233,24 +260,56 @@ class VibeVoiceManager:
                         log(
                             self.t("vv_download_progress", "Archivdownload: {percent}% ({downloaded} / {total} MB)").format(percent=percent, downloaded=downloaded // 1024 // 1024, total=total // 1024 // 1024)
                         )
+        if not partial_path.exists() or partial_path.stat().st_size < 1024:
+            partial_path.unlink(missing_ok=True)
+            raise RuntimeError(self.t("vv_download_invalid", "Das heruntergeladene Wrapper-Archiv ist leer oder unvollständig."))
+        os.replace(partial_path, self.repo_zip_path)
         log(self.t("vv_archive_saved", "Archiv gespeichert: {path}").format(path=self.repo_zip_path))
         return self.repo_zip_path
 
+    @staticmethod
+    def _safe_extract_zip(archive: zipfile.ZipFile, destination: Path) -> None:
+        root = destination.resolve()
+        for member in archive.infolist():
+            target = (destination / member.filename).resolve()
+            try:
+                target.relative_to(root)
+            except ValueError as exc:
+                raise RuntimeError(f"Unsicherer Pfad im Wrapper-Archiv: {member.filename}") from exc
+        archive.extractall(destination)
+
     def extract_repo(self, archive_path: Path, log: Callable[[str], None]) -> None:
         self.ensure_dirs()
-        if self.repo_dir.exists():
-            log(self.t("vv_replace_wrapper_dir", "Vorhandenes Wrapper-Verzeichnis wird ersetzt …"))
-            shutil.rmtree(self.repo_dir, ignore_errors=True)
         with tempfile.TemporaryDirectory(prefix="vibevoice_extract_") as tmpdir:
             tmp = Path(tmpdir)
             log(self.t("vv_extract_archive", "Entpacke Wrapper-Archiv …"))
             with zipfile.ZipFile(archive_path, "r") as zf:
-                zf.extractall(tmp)
+                if zf.testzip() is not None:
+                    raise RuntimeError(self.t("vv_archive_corrupt", "Das Wrapper-Archiv ist beschädigt."))
+                self._safe_extract_zip(zf, tmp)
             candidates = [p for p in tmp.iterdir() if p.is_dir()]
             if not candidates:
                 raise RuntimeError(self.t("vv_missing_root", "Das Archiv enthielt kein erwartetes Hauptverzeichnis."))
             source_root = candidates[0]
-            shutil.copytree(source_root, self.repo_dir)
+            if not (source_root / "vibevoice_realtime_openai_api.py").exists():
+                raise RuntimeError(self.t("vv_missing_startfile", "Die Startdatei vibevoice_realtime_openai_api.py wurde im Archiv nicht gefunden."))
+            staging_dir = self.root_dir / "repo.update"
+            backup_dir = self.root_dir / "repo.previous"
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            shutil.rmtree(backup_dir, ignore_errors=True)
+            shutil.copytree(source_root, staging_dir)
+            try:
+                if self.repo_dir.exists():
+                    log(self.t("vv_replace_wrapper_dir", "Vorhandenes Wrapper-Verzeichnis wird ersetzt …"))
+                    self.repo_dir.rename(backup_dir)
+                staging_dir.rename(self.repo_dir)
+            except Exception:
+                if not self.repo_dir.exists() and backup_dir.exists():
+                    backup_dir.rename(self.repo_dir)
+                raise
+            finally:
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            shutil.rmtree(backup_dir, ignore_errors=True)
         log(self.t("vv_extracted_to", "Wrapper entpackt nach: {path}").format(path=self.repo_dir))
         if not self.wrapper_script().exists():
             raise RuntimeError(self.t("vv_missing_startfile", "Die Startdatei vibevoice_realtime_openai_api.py wurde nach dem Entpacken nicht gefunden."))
@@ -287,12 +346,14 @@ class VibeVoiceManager:
         for index, filename in enumerate(missing, start=1):
             url = f"{OFFICIAL_VIBEVOICE_VOICE_BASE}/{filename}"
             target = voices_dir / filename
+            partial_target = target.with_suffix(target.suffix + ".part")
+            partial_target.unlink(missing_ok=True)
             log(self.t("vv_voice_download_file", "Voice preset {index}/{total}: {filename}").format(index=index, total=len(missing), filename=filename))
             with requests.get(url, stream=True, timeout=120) as response:
                 response.raise_for_status()
                 total = int(response.headers.get("Content-Length", "0") or "0")
                 current = 0
-                with open(target, "wb") as handle:
+                with open(partial_target, "wb") as handle:
                     for chunk in response.iter_content(chunk_size=1024 * 128):
                         if not chunk:
                             continue
@@ -301,8 +362,10 @@ class VibeVoiceManager:
                         if total:
                             percent = int(current * 100 / total)
                             log(self.t("vv_voice_download_progress", "Voice preset download {filename}: {percent}%").format(filename=filename, percent=percent))
-            if not target.exists() or target.stat().st_size == 0:
+            if not partial_target.exists() or partial_target.stat().st_size == 0:
+                partial_target.unlink(missing_ok=True)
                 raise RuntimeError(self.t("vv_voice_download_invalid", "The downloaded voice preset is invalid: {filename}").format(filename=filename))
+            os.replace(partial_target, target)
             downloaded += 1
             log(self.t("vv_voice_download_done_file", "Saved voice preset: {filename}").format(filename=filename))
 
@@ -313,7 +376,46 @@ class VibeVoiceManager:
         current = sys.version.split()[0]
         if sys.version_info[:2] == (3, 13):
             return self.t("vv_py313_ok", "Python {version} erkannt. Das passt zur empfohlenen Wrapper-Version.").format(version=current)
-        return self.t("vv_py313_note", "Hinweis: Der Wrapper nennt in seiner README Python 3.13 als empfohlenen Weg. Aktuell verwendet OllamaVibeDesk jedoch Python {version}. Die App versucht das Setup trotzdem mit der aktuellen Python-Version. Das kann funktionieren, ist aber nicht der offiziell empfohlene Pfad. Falls es dabei Probleme gibt, nutze vorerst 'windows_sapi' als Fallback oder richte den Wrapper später mit Python 3.13 ein.").format(version=current)
+        return self.t("vv_py313_note", "OllamaVibeDesk verwendet Python {version}; für den getrennten VibeVoice-Wrapper wird gezielt Python 3.13 gesucht und bei Bedarf unter Windows über winget eingerichtet.").format(version=current)
+
+    def _wrapper_python_command(self) -> list[str] | None:
+        candidates: list[list[str]] = []
+        if sys.version_info[:2] == (3, 13):
+            candidates.append([sys.executable])
+        if os.name == "nt" and shutil.which("py"):
+            candidates.append(["py", "-3.13"])
+        python313 = shutil.which("python3.13")
+        if python313:
+            candidates.append([python313])
+        for command in candidates:
+            try:
+                result = subprocess.run(
+                    command + ["-c", "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 13) else 1)"],
+                    capture_output=True,
+                    timeout=20,
+                    **self._subprocess_window_kwargs(hide=True),
+                )
+            except Exception:
+                continue
+            if result.returncode == 0:
+                return command
+        return None
+
+    def ensure_wrapper_python(self, log: Callable[[str], None]) -> list[str]:
+        command = self._wrapper_python_command()
+        if command:
+            return command
+        if os.name == "nt" and shutil.which("winget"):
+            log(self.t("vv_install_python313", "Python 3.13 fehlt. Installation über winget wird gestartet …"))
+            self.run_command(
+                ["winget", "install", "--id", "Python.Python.3.13", "-e", "--accept-source-agreements", "--accept-package-agreements"],
+                APP_DATA_DIR,
+                log,
+            )
+            command = self._wrapper_python_command()
+            if command:
+                return command
+        raise RuntimeError(self.t("vv_python313_missing", "Python 3.13 wurde nicht gefunden. Der aktuelle VibeVoice-Wrapper benötigt diese Version. Bitte Python 3.13 installieren und das Setup erneut starten."))
 
     def create_venv(self, log: Callable[[str], None]) -> None:
         if not self.repo_dir.exists():
@@ -323,9 +425,9 @@ class VibeVoiceManager:
         if self.venv_python().exists():
             log(self.t("vv_venv_exists", "Wrapper-venv existiert bereits."))
             return
-        py = sys.executable
-        log(self.t("vv_create_venv", "Erstelle Python-venv für den Wrapper mit der aktuellen Python-Version …"))
-        self.run_command([py, "-m", "venv", ".venv"], self.repo_dir, log)
+        python_command = self.ensure_wrapper_python(log)
+        log(self.t("vv_create_venv", "Erstelle eine getrennte Python-3.13-Umgebung für den Wrapper …"))
+        self.run_command(python_command + ["-m", "venv", ".venv"], self.repo_dir, log)
 
     def install_requirements(self, log: Callable[[str], None]) -> None:
         python = self.venv_python()
@@ -378,8 +480,17 @@ class VibeVoiceManager:
     def start_server(self, log: Callable[[str], None]) -> None:
         self.ensure_dirs()
         if self.healthcheck(timeout=2.0)[0]:
-            log(self.t("vv_server_already", "TTS-Server antwortet bereits."))
-            return
+            stored_model = ""
+            try:
+                stored_model = self.active_model_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+            if stored_model and stored_model != self.model_path and self.is_pid_running():
+                log(self.t("vv_model_changed_restart", "Das gewählte TTS-Checkpoint wurde geändert. Der lokale Server wird neu gestartet …"))
+                self.stop_server(log)
+            else:
+                log(self.t("vv_server_already", "TTS-Server antwortet bereits."))
+                return
         script = self.wrapper_script()
         python = self.venv_python()
         if not script.exists():
@@ -391,8 +502,10 @@ class VibeVoiceManager:
         root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
         env = os.environ.copy()
         env["MODELS_DIR"] = str(self.models_dir)
+        env["VIBEVOICE_MODEL_PATH"] = self.model_path
         env.setdefault("VIBEVOICE_DEVICE", "cuda")
         env.setdefault("CFG_SCALE", "1.25")
+        env.setdefault("OPTIMIZE_FOR_SPEED", "1")
         env.setdefault("PYTHONUTF8", "1")
 
         self.root_dir.mkdir(parents=True, exist_ok=True)
@@ -419,6 +532,7 @@ class VibeVoiceManager:
             **popen_kwargs,
         )
         self.pid_path.write_text(str(process.pid), encoding="utf-8")
+        self.active_model_path.write_text(self.model_path, encoding="utf-8")
         log(self.t("vv_started_pid", "Prozess gestartet mit PID {pid}.").format(pid=process.pid))
         log(self.t("vv_first_start_download", "Wenn dies der erste Start ist, kann nun ein längerer Modelldownload beginnen."))
         log(self.t("vv_models_expected", "Modelle werden erwartet unter: {path}").format(path=self.models_dir))
@@ -452,6 +566,7 @@ class VibeVoiceManager:
             os.kill(pid, 15)
         time.sleep(1)
         self.pid_path.unlink(missing_ok=True)
+        self.active_model_path.unlink(missing_ok=True)
         log(self.t("vv_stop_pid", "Beende TTS-Server PID {pid}.").format(pid=pid))
 
     def run_command(

@@ -31,6 +31,26 @@ def atomic_write_text(path: Path, text: str, *, encoding: str = "utf-8") -> None
         raise
 
 
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write binary data atomically beside the destination file."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent))
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, target)
+    except Exception:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
+
 def backup_file(path: Path, *, label: str = "corrupt") -> Path | None:
     source = Path(path)
     if not source.exists():

@@ -17,7 +17,8 @@ class OllamaClient:
         response = requests.get(self._url('/api/tags'), timeout=8)
         response.raise_for_status()
         data = response.json()
-        models = [item.get('name', '') for item in data.get('models', []) if item.get('name')]
+        raw_models = data.get('models', []) if isinstance(data, dict) else []
+        models = [str(item.get('name', '')).strip() for item in raw_models if isinstance(item, dict) and item.get('name')]
         return sorted(models)
 
     def status(self) -> Dict[str, str]:
@@ -89,6 +90,8 @@ class OllamaClient:
         )
         response.raise_for_status()
         data = response.json()
+        if isinstance(data, dict) and data.get('error'):
+            raise RuntimeError(f"Ollama error: {data.get('error')}")
         content, _thinking = self._extract_parts(data)
         return content.strip()
 
@@ -115,7 +118,15 @@ class OllamaClient:
             for raw_line in response.iter_lines(decode_unicode=True):
                 if not raw_line:
                     continue
-                data = json.loads(raw_line)
+                try:
+                    data = json.loads(raw_line)
+                except json.JSONDecodeError as exc:
+                    preview = str(raw_line)[:240]
+                    raise RuntimeError(f"Ollama returned an invalid streaming response: {preview}") from exc
+                if not isinstance(data, dict):
+                    continue
+                if data.get('error'):
+                    raise RuntimeError(f"Ollama error: {data.get('error')}")
                 content, thinking = self._extract_parts(data)
                 if content or thinking:
                     emitted_any = True
