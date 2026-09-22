@@ -1,5 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+set "PYTHONUTF8=1"
 cd /d "%~dp0"
 
 if not exist "version.txt" (
@@ -48,9 +49,9 @@ if not defined PYTHON_CMD (
     exit /b 1
 )
 
-%PYTHON_CMD% -c "import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)" >>"%INSTALL_LOG%" 2>&1
+%PYTHON_CMD% -c "import sys; raise SystemExit(0 if sys.version_info >= (3,10) and sys.maxsize > 2**32 else 1)" >>"%INSTALL_LOG%" 2>&1
 if errorlevel 1 (
-    echo !C_ERR!Python 3.10 or newer is required.!C_RESET!
+    echo !C_ERR!64-bit Python 3.10 or newer is required.!C_RESET!
     >>"%INSTALL_LOG%" echo ERROR: Python version is too old.
     pause
     exit /b 1
@@ -79,7 +80,12 @@ if not exist ".venv\Scripts\python.exe" (
 
 echo !C_INFO![3/7] Installing application dependencies...!C_RESET!
 set "INSTALLED_OFFLINE=0"
-if exist "wheelhouse\*.whl" (
+".venv\Scripts\python.exe" -m pip check >>"%INSTALL_LOG%" 2>&1
+if not errorlevel 1 (
+    ".venv\Scripts\python.exe" tools\verify_installation.py --quick >>"%INSTALL_LOG%" 2>&1
+    if not errorlevel 1 set "INSTALLED_OFFLINE=1"
+)
+if "!INSTALLED_OFFLINE!"=="0" if exist "wheelhouse\*.whl" (
     echo !C_DIM!Trying the local offline wheelhouse first...!C_RESET!
     ".venv\Scripts\python.exe" -m pip install --no-index --find-links wheelhouse -r requirements.txt >>"%INSTALL_LOG%" 2>&1
     if not errorlevel 1 set "INSTALLED_OFFLINE=1"
@@ -104,7 +110,7 @@ if "!INSTALLED_OFFLINE!"=="0" (
     ".venv\Scripts\python.exe" -m pip download --only-binary=:all: -r requirements.txt -d wheelhouse >>"%INSTALL_LOG%" 2>&1
     if errorlevel 1 echo !C_WARN!The app is installed, but the offline wheelhouse could not be refreshed completely.!C_RESET!
 ) else (
-    echo !C_OK!Dependencies installed from the offline wheelhouse.!C_RESET!
+    echo !C_OK!Dependencies ready locally; no online upgrade required.!C_RESET!
 )
 
 echo !C_INFO![4/7] Preparing portable application directories...!C_RESET!
@@ -128,8 +134,9 @@ if errorlevel 1 (
 )
 set "QT_QPA_PLATFORM=offscreen"
 ".venv\Scripts\python.exe" tools\verify_installation.py >>"%INSTALL_LOG%" 2>&1
+set "VERIFY_EXIT=!ERRORLEVEL!"
 set "QT_QPA_PLATFORM="
-if errorlevel 1 (
+if not "!VERIFY_EXIT!"=="0" (
     echo !C_ERR!Installation verification failed; the app will not be started.!C_RESET!
     echo !C_WARN!See %INSTALL_LOG% for details.!C_RESET!
     pause
@@ -155,7 +162,7 @@ if exist "app_data\speech\crispasr\runtime\crispasr.exe" (
 
 echo !C_INFO![7/7] Preparing the optional local wiki template...!C_RESET!
 if not exist "app_data\cache\tiddlywiki_empty.html" (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://tiddlywiki.com/empty.html' -OutFile 'app_data\cache\tiddlywiki_empty.html' -UseBasicParsing; exit 0 } catch { exit 1 }" >>"%INSTALL_LOG%" 2>&1
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://tiddlywiki.com/empty.html' -OutFile 'app_data\cache\tiddlywiki_empty.html' -UseBasicParsing -TimeoutSec 20; exit 0 } catch { exit 1 }" >>"%INSTALL_LOG%" 2>&1
     if errorlevel 1 (
         echo !C_WARN!The optional TiddlyWiki template could not be downloaded. The app remains usable.!C_RESET!
     ) else (

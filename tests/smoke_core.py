@@ -9,15 +9,27 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app.auto_answer_data import ensure_auto_answer_data, load_bundle, read_list
-from app.auto_answer_engine import expand_phrase_templates, generate_from_clean_text, is_question_text
+from app.auto_answer_engine import (
+    expand_phrase_templates,
+    generate_from_clean_text,
+    is_question_text,
+)
+from app.chat_titles import (
+    build_continuation_title,
+    infer_continuation_index,
+    strip_continuation_suffix,
+)
 from app.config import DEFAULT_CONFIG, normalize_config
+from app.context_budget import rollover_output_reserve, would_exceed_rollover_budget
 from app.hardware import detect_hardware
 from app.knowledge import LocalKnowledgeBase, uuid_hash
-from app.models import ChatMessage
+from app.models import ChatMessage, ChatSession
 from app.personalities import load_personalities, resolve_configured_personality_prompt
-from app.themes import THEMES
-from app.tts_profiles import VOICE_STYLE_IDS, effective_voice_controls, normalize_voice_style
-from app.version import VERSION
+from app.reasoning import (
+    configured_reasoning_effort,
+    normalize_reasoning_effort,
+    resolve_reasoning_effort,
+)
 from app.speech_models import (
     PYTHON_REALTIME_TTS_MODEL,
     VIBEVOICE_ASR_MODELS,
@@ -25,12 +37,19 @@ from app.speech_models import (
     get_vibevoice_asr_model,
     get_vibevoice_tts_model,
 )
+from app.themes import THEMES
+from app.tts_profiles import (
+    VOICE_STYLE_IDS,
+    effective_voice_controls,
+    normalize_voice_style,
+)
+from app.version import VERSION
 
 
 def main() -> int:
     ensure_auto_answer_data()
     assert DEFAULT_CONFIG["auto_answer_eliza_share"] + DEFAULT_CONFIG["auto_answer_llm_share"] <= 100
-    assert VERSION == ROOT.joinpath("version.txt").read_text(encoding="utf-8").strip()
+    assert ROOT.joinpath("version.txt").read_text(encoding="utf-8").strip() == VERSION
     assert len(VOICE_STYLE_IDS) >= 8
     assert normalize_voice_style("unknown") == "natural"
     rate, pitch, volume, effect, intensity = effective_voice_controls("robotic", 100, 0, 0, 100)
@@ -46,6 +65,24 @@ def main() -> int:
     assert repaired["windows_sapi_rate"] == 10
     assert repaired["auto_answer_eliza_share"] + repaired["auto_answer_llm_share"] == 100
     assert repaired["autoplay_tts"] is False
+    migrated_reasoning = normalize_config({"auto_thinking_for_code_requests": False})
+    assert migrated_reasoning["reasoning_default_effort"] == "off"
+    reasoning_config = normalize_config({
+        "reasoning_default_effort": "auto",
+        "model_reasoning_efforts": {
+            "qwen3:8b": "high",
+            "bad\nmodel": "medium",
+            "llama3.2": "invalid",
+        },
+    })
+    assert configured_reasoning_effort(reasoning_config, "qwen3:8b") == "high"
+    assert resolve_reasoning_effort(reasoning_config, "new-model", is_code_request=True) == "medium"
+    assert resolve_reasoning_effort(reasoning_config, "new-model", is_code_request=False) == "off"
+    assert "bad\nmodel" not in reasoning_config["model_reasoning_efforts"]
+    assert normalize_reasoning_effort(True) == "medium"
+    assert rollover_output_reserve(8192, 8192) == int(8192 * 0.20)
+    assert not would_exceed_rollover_budget(100, 8192, 8192)
+    assert would_exceed_rollover_budget(7000, 8192, 8192)
     assert DEFAULT_CONFIG["vibevoice_model_path"] == PYTHON_REALTIME_TTS_MODEL
     assert len(VIBEVOICE_TTS_MODELS) == 2
     assert len(VIBEVOICE_ASR_MODELS) == 2
@@ -108,6 +145,33 @@ def main() -> int:
     assert auto["source_kind"] in {"phrase", "question_reply", "eliza"}
     restored = ChatMessage.from_dict({"role": "assistant", "content": "ok", "future_field": 42})
     assert restored.role == "assistant" and restored.content == "ok"
+    continuation_messages = [
+        {"role": "user", "content": "Wir sprechen zuerst über die Installation."},
+        {"role": "assistant", "content": "Die Installation ist abgeschlossen."},
+        {"role": "user", "content": "Fortsetzungschats brauchen thematische Namen und Reasoning in Low, Medium oder High."},
+        {"role": "assistant", "content": "Reasoning und die Namen der Fortsetzungschats werden modellbezogen verbessert."},
+    ]
+    continuation_title, topic = build_continuation_title(
+        continuation_messages,
+        "Installation",
+        2,
+        " (Fortsetzung {number})",
+    )
+    assert "Reasoning" in topic and "Fortsetzungschats" in topic
+    assert continuation_title.endswith("(Fortsetzung 2)")
+    assert strip_continuation_suffix(continuation_title) == topic
+    assert infer_continuation_index("Thema (Fortsetzung)") == 1
+    restored_session = ChatSession.from_dict({
+        "session_id": "safe-session",
+        "title": continuation_title,
+        "continuation_index": 2,
+        "continuation_of": "parent-session",
+        "topic_title": topic,
+        "messages": [],
+    })
+    assert restored_session.continuation_index == 2
+    assert restored_session.continuation_of == "parent-session"
+    assert restored_session.to_dict()["topic_title"] == topic
     profile = detect_hardware()
     assert profile.recommended_num_ctx >= 2048
     with tempfile.TemporaryDirectory() as temp_dir:

@@ -11,8 +11,8 @@ import sys
 import tempfile
 import wave
 import zipfile
+import unittest
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -34,6 +34,15 @@ def validate_sources() -> None:
         ROOT / "app" / "audio_recorder.py",
         ROOT / "app" / "crispasr_runtime.py",
         ROOT / "app" / "speech_models.py",
+        ROOT / "app" / "reasoning.py",
+        ROOT / "app" / "chat_titles.py",
+        ROOT / "app" / "context_budget.py",
+        ROOT / "app" / "adaptive_context.py",
+        ROOT / "app" / "continuity.py",
+        ROOT / "tests" / "test_context_policy.py",
+        ROOT / "tests" / "smoke_gui_continuity.py",
+        ROOT / "tools" / "build_release.py",
+        ROOT / "tests" / "smoke_ollama_api.py",
         ROOT / "run_windows.bat",
         ROOT / "install_crispasr_windows.bat",
         ROOT / "tools" / "install_crispasr.ps1",
@@ -45,7 +54,7 @@ def validate_sources() -> None:
     parts = version.split(".")
     check(len(parts) == 3 and all(part.isdigit() for part in parts), "version.txt must contain a semantic X.Y.Z version")
 
-    for path in sorted(ROOT.joinpath("app").glob("*.py")) + sorted(ROOT.joinpath("tools").glob("*.py")):
+    for path in sorted(ROOT.joinpath("app").glob("*.py")) + sorted(ROOT.joinpath("tools").glob("*.py")) + sorted(ROOT.joinpath("tests").glob("*.py")):
         ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
     language_files = sorted(ROOT.joinpath("lang").glob("*.json"))
@@ -71,19 +80,29 @@ def validate_dependencies() -> None:
     for module_name in ("PyQt6", "requests", "markdown", "psutil"):
         importlib.import_module(module_name)
     from app.config import DEFAULT_CONFIG, normalize_config
-    from app.tts_profiles import VOICE_STYLE_IDS
+    from app.ollama_client import OllamaClient
+    from app.speech_models import (
+        VIBEVOICE_ASR_MODELS,
+        VIBEVOICE_TTS_MODELS,
+        get_vibevoice_asr_model,
+        get_vibevoice_tts_model,
+    )
     from app.tts_client import TTSClient
+    from app.tts_profiles import VOICE_STYLE_IDS
     from app.tts_setup import VibeVoiceManager
-    from app.speech_models import VIBEVOICE_ASR_MODELS, VIBEVOICE_TTS_MODELS, get_vibevoice_asr_model, get_vibevoice_tts_model
     from app.version import VERSION
 
     check(len(VOICE_STYLE_IDS) >= 8, "Voice style catalog is incomplete")
     check(normalize_config({"tts_backend": "invalid"})["tts_backend"] == "disabled", "Config validation failed")
-    check(VERSION == (ROOT / "version.txt").read_text(encoding="utf-8").strip(), "Runtime version differs from version.txt")
+    check((ROOT / "version.txt").read_text(encoding="utf-8").strip() == VERSION, "Runtime version differs from version.txt")
     check(bool(DEFAULT_CONFIG.get("vibevoice_model_path")), "Default VibeVoice model path is missing")
     check(len(VIBEVOICE_ASR_MODELS) == 2 and len(VIBEVOICE_TTS_MODELS) == 2, "Verified VibeVoice model catalog is incomplete")
     check(get_vibevoice_asr_model("vibevoice_asr_7b").purpose == "asr", "Full VibeVoice ASR route is invalid")
     check(get_vibevoice_tts_model("vibevoice_1_5b").backend == "vibevoice-1.5b", "VibeVoice 1.5B TTS route is invalid")
+    ollama_client = OllamaClient("http://127.0.0.1:11434")
+    check(ollama_client._payload("qwen3:8b", [], think="high")["think"] == "high", "Reasoning level was not preserved")
+    check(ollama_client._payload("qwen3:8b", [], think="off")["think"] is False, "Reasoning off was not preserved")
+    check(ollama_client._think_fallback_attempts("low") == ["low", True, None], "Reasoning compatibility fallback is invalid")
     incompatible_rejected = False
     try:
         get_vibevoice_tts_model("vibevoice_asr_bitnet")
@@ -131,10 +150,10 @@ def validate_gui() -> bool:
         try:
             ctypes.CDLL("libEGL.so.1")
         except OSError:
-            print("[SKIP] GUI construction (the Linux test host has no libEGL; Windows installer verification still requires GUI success)")
-            return False
+            raise RuntimeError("GUI verification requires libEGL on Linux; install it or use --quick for explicitly limited checks")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PyQt6.QtWidgets import QApplication
+
     from app.config import DEFAULT_CONFIG
     from app.main import SettingsDialog
 
@@ -148,14 +167,27 @@ def validate_gui() -> bool:
     check(dialog.tts_user_style.count() >= 8, "User voice styles are missing from the GUI")
     check(dialog.crispasr_tts_model.count() == 2, "Compatible CrispASR TTS choices are missing")
     check(dialog.asr_model.count() == 2, "Compatible VibeVoice ASR choices are missing")
+    check(dialog.reasoning_default_effort.count() == 5, "Default reasoning levels are missing")
+    check(dialog.reasoning_model_effort.count() == 6, "Per-model reasoning overrides are incomplete")
+    dialog.context_limit.setValue(8)
+    dialog.context_defaults_btn.click()
+    check(dialog.context_limit.value() == 0 and dialog.rollover_carry_messages.value() == 0, "Adaptive defaults button failed")
+    check(not dialog.auto_answer_short_answers.isChecked(), "Discussion defaults still force short replies")
     dialog.close()
     app.processEvents()
+    namespace = runpy.run_path(str(ROOT / "tests" / "smoke_gui_continuity.py"))
+    check(namespace["main"]() == 0, "Main-window continuity integration test failed")
     return True
 
 
 def validate_core_smoke() -> None:
     namespace = runpy.run_path(str(ROOT / "tests" / "smoke_core.py"))
     check(namespace["main"]() == 0, "Core smoke test failed")
+
+
+def validate_ollama_api_smoke() -> None:
+    namespace = runpy.run_path(str(ROOT / "tests" / "smoke_ollama_api.py"))
+    check(namespace["main"]() == 0, "Ollama reasoning API smoke test failed")
 
 
 def main() -> int:
@@ -173,9 +205,14 @@ def main() -> int:
     if not args.source_only and not args.quick:
         validate_core_smoke()
         print("[OK] Core runtime smoke test")
+        namespace = runpy.run_path(str(ROOT / "tests" / "test_context_policy.py"))
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(namespace["ContextPolicyTests"])
+        check(unittest.TextTestRunner().run(suite).wasSuccessful(), "Adaptive context regression tests failed")
+        validate_ollama_api_smoke()
+        print("[OK] Ollama reasoning request and compatibility fallback")
         if validate_gui():
             print("[OK] Off-screen GUI construction and voice controls")
-    print("OllamaVibeDesk installation verification passed.")
+    print("OllamaVibeDesk " + ("source-only validation" if args.source_only else "quick import validation (GUI not tested)" if args.quick else "full installation verification") + " passed.")
     return 0
 
 
@@ -184,4 +221,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
