@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import atexit
 import subprocess
-import sys
 import time
 from pathlib import Path
 from urllib.parse import urlparse

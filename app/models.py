@@ -66,6 +66,15 @@ class ChatSession:
     model_name: str = ""
     messages: List[ChatMessage] = field(default_factory=list)
     reapply_short_instruction_after_rollover: bool = False
+    continuation_index: int = 0
+    continuation_of: Optional[str] = None
+    topic_title: str = ""
+
+    continuity_memory: list[dict] = field(default_factory=list)
+    carried_messages: int = 0
+    root_topic: str = ""
+    title_history: list[dict] = field(default_factory=list)
+    rollover_diagnostics: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -76,6 +85,14 @@ class ChatSession:
             "model_name": self.model_name,
             "messages": [m.__dict__ for m in self.messages],
             "reapply_short_instruction_after_rollover": self.reapply_short_instruction_after_rollover,
+            "continuation_index": self.continuation_index,
+            "continuation_of": self.continuation_of,
+            "topic_title": self.topic_title,
+            "continuity_memory": self.continuity_memory,
+            "carried_messages": self.carried_messages,
+            "root_topic": self.root_topic,
+            "title_history": self.title_history,
+            "rollover_diagnostics": self.rollover_diagnostics,
         }
 
     @classmethod
@@ -84,6 +101,11 @@ class ChatSession:
         session_id = str(raw.get("session_id", "") or "").strip()
         if not session_id:
             raise ValueError("Chat session is missing its session_id")
+        try:
+            continuation_index = max(0, min(1000000, int(raw.get("continuation_index", 0) or 0)))
+        except (TypeError, ValueError):
+            continuation_index = 0
+        continuation_of = str(raw.get("continuation_of", "") or "").strip() or None
         session = cls(
             session_id=session_id,
             title=str(raw.get("title", "Neue Unterhaltung") or "Neue Unterhaltung"),
@@ -91,7 +113,19 @@ class ChatSession:
             updated_at=str(raw.get("updated_at", datetime.now().isoformat(timespec="seconds")) or datetime.now().isoformat(timespec="seconds")),
             model_name=str(raw.get("model_name", "") or ""),
             reapply_short_instruction_after_rollover=bool(raw.get("reapply_short_instruction_after_rollover", False)),
+            continuation_index=continuation_index,
+            continuation_of=continuation_of,
+            topic_title=str(raw.get("topic_title", "") or "").strip(),
         )
+        for key in ("continuity_memory", "title_history"):
+            value = raw.get(key, [])
+            setattr(session, key, [r for r in value if isinstance(r, dict)] if isinstance(value, list) else [])
+        session.root_topic = str(raw.get("root_topic", "") or "")
+        try:
+            session.carried_messages = max(0, int(raw.get("carried_messages", 0)))
+        except (TypeError, ValueError):
+            session.carried_messages = 0
+        session.rollover_diagnostics = raw.get("rollover_diagnostics", {}) if isinstance(raw.get("rollover_diagnostics"), dict) else {}
         raw_messages = raw.get("messages", [])
         if not isinstance(raw_messages, list):
             raw_messages = []

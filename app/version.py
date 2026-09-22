@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 VERSION_FILE = Path(__file__).resolve().parent.parent / "version.txt"
-FALLBACK_VERSION = "2.2.0"
+FALLBACK_VERSION = "2.4.1"
 
 
 def read_version() -> str:

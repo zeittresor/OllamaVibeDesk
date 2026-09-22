@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from app.file_utils import atomic_write_text, backup_file
 from app.tts_profiles import clamp_int, normalize_voice_style
+from app.reasoning import normalize_model_reasoning_efforts, normalize_reasoning_effort
 from app.speech_models import (
     PYTHON_REALTIME_TTS_MODEL,
     normalize_vibevoice_asr_model,
@@ -69,7 +70,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "tts_assistant_style_intensity": 65,
     "tts_user_style_intensity": 65,
     "windows_sapi_rate": 0,
-    "windows_sapi_pitch": 3,
+    "windows_sapi_pitch": 0,
     "windows_sapi_volume": 100,
     "windows_sapi_user_rate": 0,
     "windows_sapi_user_pitch": 0,
@@ -89,24 +90,27 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "strip_emojis_for_tts": True,
     "chat_max_tokens": 8192,
     "auto_answer_max_rounds": 0,
-    "context_message_limit": 8,
+    "context_message_limit": 0,
     "hardware_auto_context": True,
-    "ollama_num_ctx": 16384,
-    "auto_answer_short_answers": True,
+    "context_policy_version": 24,
+    "ollama_num_ctx": 32768,
+    "auto_answer_short_answers": False,
     "auto_answer_eliza_share": 30,
     "auto_answer_llm_share": 0,
     "auto_answer_llm_model": "",
-    "auto_answer_llm_max_tokens": 160,
+    "auto_answer_llm_max_tokens": 512,
     "auto_answer_llm_system_prompt": "",
     "user_personality_id": "custom",
     "assistant_personality_id": "custom",
     "auto_answer_llm_include_recent_context": True,
     "auto_answer_phrase_repeat_lookback": 4,
-    "rollover_carry_messages": 5,
+    "rollover_carry_messages": 0,
     "auto_answer_short_instruction_overrides": {},
     "tts_voice_defaults_initialized": False,
     "debug_trace_enabled": False,
     "auto_thinking_for_code_requests": True,
+    "reasoning_default_effort": "auto",
+    "model_reasoning_efforts": {},
     "auto_answer_use_question_replies_for_all": True,
     "allow_consecutive_auto_answer_dataset_reuse": False,
     "persistent_knowledge_enabled": False,
@@ -138,13 +142,13 @@ _INT_RANGES = {
     "tts_user_style_intensity": (0, 100),
     "chat_max_tokens": (64, 262144),
     "auto_answer_max_rounds": (0, 100000),
-    "context_message_limit": (6, 200),
+    "context_message_limit": (0, 10000),
     "ollama_num_ctx": (2048, 262144),
     "auto_answer_eliza_share": (0, 100),
     "auto_answer_llm_share": (0, 100),
     "auto_answer_llm_max_tokens": (32, 8192),
     "auto_answer_phrase_repeat_lookback": (1, 50),
-    "rollover_carry_messages": (2, 40),
+    "rollover_carry_messages": (0, 200),
     "knowledge_retrieval_limit": (1, 12),
 }
 
@@ -178,6 +182,13 @@ def normalize_config(data: object) -> Dict[str, Any]:
     incoming = data if isinstance(data, dict) else {}
     merged: Dict[str, Any] = DEFAULT_CONFIG.copy()
     merged.update(incoming)
+    # Migrate only legacy automatic defaults; explicit custom limits remain intact.
+    if incoming.get("context_policy_version") != 24 and _coerce_bool(incoming.get("hardware_auto_context", True), True):
+        if incoming.get("context_message_limit") == 8:
+            merged["context_message_limit"] = 0
+        if incoming.get("rollover_carry_messages") == 5:
+            merged["rollover_carry_messages"] = 0
+    merged["context_policy_version"] = 24
 
     for key in _BOOL_KEYS:
         merged[key] = _coerce_bool(merged.get(key), bool(DEFAULT_CONFIG.get(key, False)))
@@ -216,6 +227,19 @@ def normalize_config(data: object) -> Dict[str, Any]:
         merged["asr_language"] = "auto"
     executable_path = str(merged.get("crispasr_executable_path", "") or "").strip()
     merged["crispasr_executable_path"] = "" if any(char in executable_path for char in "\r\n\0") else executable_path
+
+    # v2.2 exposed only a code-specific Thinking checkbox. Preserve that
+    # behavior as the new per-model "auto" default when migrating old files.
+    if "reasoning_default_effort" not in incoming:
+        legacy_auto = _coerce_bool(incoming.get("auto_thinking_for_code_requests", True), True)
+        merged["reasoning_default_effort"] = "auto" if legacy_auto else "off"
+    else:
+        merged["reasoning_default_effort"] = normalize_reasoning_effort(
+            merged.get("reasoning_default_effort"), DEFAULT_CONFIG["reasoning_default_effort"]
+        )
+    merged["model_reasoning_efforts"] = normalize_model_reasoning_efforts(
+        merged.get("model_reasoning_efforts", {})
+    )
 
     # v2.1 only had one set of SAPI controls. Preserve it for the assistant and
     # initialize the user role independently when loading older profiles.

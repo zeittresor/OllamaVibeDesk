@@ -77,6 +77,14 @@ from app.hardware import HardwareProfile, detect_hardware
 from app.language_profiles import load_language_profile, preferred_voice_candidates, sapi_language_tag
 from app.file_utils import atomic_write_text, backup_file
 from app.knowledge import LocalKnowledgeBase
+from app.chat_titles import build_continuation_title, infer_continuation_index
+from app.context_budget import request_token_budget, rollover_output_reserve, would_exceed_rollover_budget
+from app.context_budget import estimate_token_count, estimate_chat_payload_tokens
+from app.adaptive_context import collect_runtime, choose_context, is_memory_error
+from app.continuity import build_memory, memory_prompt, select_carry
+from app.chat_titles import infer_topic_title, strip_continuation_suffix
+from queue import SimpleQueue, Empty
+from app.reasoning import REASONING_EFFORTS, configured_reasoning_effort, normalize_model_reasoning_efforts, normalize_reasoning_effort, resolve_reasoning_effort
 from app.personalities import CUSTOM_PERSONALITY_ID, load_personalities, load_personality, render_personality_prompt, resolve_configured_personality_prompt
 from app.personality_editor import PersonalityEditorDialog
 from app.version import DISPLAY_VERSION
@@ -332,7 +340,7 @@ AUTO_ANSWER_ROLLOVER_TOKEN_BUDGET_FACTOR = 8
 AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET = 2048
 APP_VERSION = DISPLAY_VERSION
 APP_TITLE_WITH_VERSION = f"OllamaVibeDesk {APP_VERSION}"
-APP_WINDOW_DATE = "2026-08-18"
+APP_WINDOW_DATE = "2026-09-21"
 MAX_MARKDOWN_RENDER_CHARS = 120000
 MAX_MARKDOWN_RENDER_LINES = 2500
 MAX_BROWSER_TEXT_CHARS = 180000
@@ -414,30 +422,12 @@ def safe_int(value: object, default: int = 0) -> int:
         return int(default)
 
 
-def estimate_token_count(text: str) -> int:
-    raw = str(text or "")
-    if not raw:
-        return 0
-    words = len(re.findall(r"\S+", raw))
-    by_chars = max(1, (len(raw) + 3) // 4)
-    by_words = max(1, int(words * 1.35))
-    return max(by_chars, by_words)
-
-
-def estimate_chat_payload_tokens(messages: list[dict], system_prompt: str = "") -> int:
-    total = estimate_token_count(system_prompt)
-    for item in messages:
-        total += 8
-        total += estimate_token_count(str(item.get("content", "") or ""))
-    return total
-
-
 def is_context_overflow_error(message: str) -> bool:
     hay = str(message or "").lower()
     needles = [
         'context length', 'maximum context length', 'prompt too long', 'input too long',
         'token limit', 'too many tokens', 'more than the context window', 'context window',
-        'num_ctx', 'truncate', 'requested tokens exceed', 'llm context', 'ctx'
+        'requested tokens exceed', 'llm context'
     ]
     return any(needle in hay for needle in needles)
 
@@ -721,6 +711,7 @@ def pretty_timestamp(value: str) -> str:
 class SessionStore:
     def __init__(self) -> None:
         ensure_directories()
+        self._metadata_cache = {}
 
     def _path(self, session_id: str) -> Path:
         safe_id = re.sub(r"[^A-Za-z0-9._-]+", "_", str(session_id or "")).strip("._")
@@ -728,16 +719,34 @@ class SessionStore:
             raise ValueError("Invalid chat session ID")
         return CHATS_DIR / f"{safe_id}.json"
 
+    def load(self, session_id: str) -> ChatSession | None:
+        path = self._path(session_id)
+        if not path.is_file():
+            return None
+        try:
+            return ChatSession.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            return None
+
     def list_sessions(self) -> List[ChatSession]:
-        sessions: List[ChatSession] = []
-        for path in sorted(CHATS_DIR.glob("*.json")):
+        sessions = []
+        seen = set()
+        for path in CHATS_DIR.glob("*.json"):
+            seen.add(path)
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                sessions.append(ChatSession.from_dict(data))
-            except Exception:
-                backup_file(path, label="invalid")
+                stat = path.stat()
+                signature = (stat.st_mtime_ns, stat.st_size)
+                cached = self._metadata_cache.get(path)
+                if cached is None or cached[0] != signature:
+                    session = ChatSession.from_dict(json.loads(path.read_text(encoding="utf-8")))
+                    session.stored_message_count = len(session.messages)
+                    session.messages = []
+                    self._metadata_cache[path] = (signature, session)
+                sessions.append(self._metadata_cache[path][1])
+            except (OSError, ValueError, TypeError):
                 continue
-        sessions.sort(key=lambda s: s.updated_at, reverse=True)
+        self._metadata_cache = {p: value for p, value in self._metadata_cache.items() if p in seen}
+        sessions.sort(key=lambda session: (session.updated_at, session.created_at, session.session_id), reverse=True)
         return sessions
 
     def save(self, session: ChatSession) -> None:
@@ -994,14 +1003,14 @@ class ChatWorker(QObject):
     finished = pyqtSignal()
     failed = pyqtSignal(str)
 
-    def __init__(self, base_url: str, model_name: str, messages: List[dict], system_prompt: str, max_tokens: int = 512, think_mode: bool = False, num_ctx: int = 8192) -> None:
+    def __init__(self, base_url: str, model_name: str, messages: List[dict], system_prompt: str, max_tokens: int = 512, reasoning_effort: str = "off", num_ctx: int = 8192) -> None:
         super().__init__()
         self.base_url = base_url
         self.model_name = model_name
         self.messages = messages
         self.system_prompt = system_prompt
         self.max_tokens = int(max_tokens or 512)
-        self.think_mode = bool(think_mode)
+        self.reasoning_effort = normalize_reasoning_effort(reasoning_effort)
         self.num_ctx = max(2048, int(num_ctx or 8192))
         self._cancel_requested = False
 
@@ -1016,7 +1025,7 @@ class ChatWorker(QObject):
                 messages=self.messages,
                 system_prompt=self.system_prompt,
                 options={"num_predict": self.max_tokens, "num_ctx": self.num_ctx} if self.max_tokens > 0 else {"num_ctx": self.num_ctx},
-                think=self.think_mode,
+                think=self.reasoning_effort,
             ):
                 if self._cancel_requested:
                     break
@@ -1030,7 +1039,7 @@ class AutoAnswerLLMWorker(QObject):
     finished = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, base_url: str, model_name: str, messages: List[dict], system_prompt: str, max_tokens: int, num_ctx: int) -> None:
+    def __init__(self, base_url: str, model_name: str, messages: List[dict], system_prompt: str, max_tokens: int, num_ctx: int, reasoning_effort: str = "off") -> None:
         super().__init__()
         self.base_url = base_url
         self.model_name = model_name
@@ -1038,6 +1047,7 @@ class AutoAnswerLLMWorker(QObject):
         self.system_prompt = system_prompt
         self.max_tokens = max(32, int(max_tokens or 160))
         self.num_ctx = max(2048, int(num_ctx or 8192))
+        self.reasoning_effort = normalize_reasoning_effort(reasoning_effort)
         self._cancel_requested = False
 
     def cancel(self) -> None:
@@ -1053,19 +1063,23 @@ class AutoAnswerLLMWorker(QObject):
                 system_prompt=self.system_prompt,
                 options={"num_predict": self.max_tokens, "num_ctx": self.num_ctx},
                 timeout=300,
-                think=False,
+                think=self.reasoning_effort,
             ):
                 if self._cancel_requested:
+                    self.finished.emit("")
                     return
                 parts.append(str(payload.get("content", "") or ""))
             cleaned = "".join(parts).strip().strip('"').strip()
             if self._cancel_requested:
+                self.finished.emit("")
                 return
             if not cleaned:
                 raise RuntimeError("Auto-Answer-LLM returned no text")
             self.finished.emit(cleaned)
         except Exception as exc:
-            if not self._cancel_requested:
+            if self._cancel_requested:
+                self.finished.emit("")
+            else:
                 self.failed.emit(str(exc))
 
 
@@ -1563,10 +1577,73 @@ class SettingsDialog(QDialog):
         short_answers_row.addWidget(self.edit_auto_answer_short_prompt_btn)
         self.content_layout.addLayout(short_answers_row)
 
-        self.auto_thinking_for_code_requests = QCheckBox(self.t("auto_thinking_for_code_requests_label", "Automatisch zu Thinking Modus wechseln wenn Code erstellt werden soll"))
-        self.auto_thinking_for_code_requests.setChecked(bool(self.config.get("auto_thinking_for_code_requests", True)))
-        self.auto_thinking_for_code_requests.setToolTip(self.t("auto_thinking_for_code_requests_tooltip", "Wenn aktiv, wird bei erkannten Code-Anfragen für kompatible Modelle automatisch Thinking aktiviert und zusätzlich explizit verlangt, den Code wirklich in einem Markdown-Codeblock auszugeben."))
-        self.content_layout.addWidget(self.auto_thinking_for_code_requests)
+        reasoning_title = QLabel(self.t("reasoning_group_title", "Reasoning / Thinking pro Modell"))
+        reasoning_title.setObjectName("SubtleLabel")
+        self.content_layout.addWidget(reasoning_title)
+
+        self._reasoning_override_syncing = False
+        self._model_reasoning_efforts = normalize_model_reasoning_efforts(self.config.get("model_reasoning_efforts", {}))
+        effort_labels = {
+            "off": self.t("reasoning_effort_off", "Aus"),
+            "auto": self.t("reasoning_effort_auto", "Automatisch bei Code"),
+            "low": self.t("reasoning_effort_low", "Low"),
+            "medium": self.t("reasoning_effort_medium", "Medium"),
+            "high": self.t("reasoning_effort_high", "High"),
+        }
+
+        self.reasoning_default_effort = QComboBox()
+        for effort in REASONING_EFFORTS:
+            self.reasoning_default_effort.addItem(effort_labels[effort], effort)
+        self._set_combo_data_value(
+            self.reasoning_default_effort,
+            normalize_reasoning_effort(self.config.get("reasoning_default_effort", "auto"), "auto"),
+            1,
+        )
+        self.reasoning_default_effort.setToolTip(self.t(
+            "reasoning_default_tooltip",
+            "Standard für Modelle ohne eigene Übersteuerung. Automatisch aktiviert Medium nur bei erkannten Code-Anfragen.",
+        ))
+        add_row(self.t("reasoning_default_label", "Standard-Reasoning für Modelle"), self.reasoning_default_effort)
+
+        reasoning_override_row = QHBoxLayout()
+        reasoning_override_row.addWidget(QLabel(self.t("reasoning_model_label", "Modellspezifische Übersteuerung")), 1)
+        self.reasoning_model = QComboBox()
+        model_candidates: list[str] = []
+        for model_name in self.model_names + [
+            str(self.config.get("last_model", "") or ""),
+            str(self.config.get("auto_answer_llm_model", "") or ""),
+        ]:
+            model_name = str(model_name or "").strip()
+            if model_name and model_name not in model_candidates:
+                model_candidates.append(model_name)
+        self.reasoning_model.addItems(model_candidates)
+        self.reasoning_model.setMinimumContentsLength(24)
+        self.reasoning_model.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        reasoning_override_row.addWidget(self.reasoning_model, 2)
+        self.reasoning_model_effort = QComboBox()
+        self.reasoning_model_effort.addItem(self.t("reasoning_use_default", "Standard verwenden"), "default")
+        for effort in REASONING_EFFORTS:
+            self.reasoning_model_effort.addItem(effort_labels[effort], effort)
+        reasoning_override_row.addWidget(self.reasoning_model_effort, 1)
+        self.content_layout.addLayout(reasoning_override_row)
+        has_reasoning_models = self.reasoning_model.count() > 0
+        self.reasoning_model.setEnabled(has_reasoning_models)
+        self.reasoning_model_effort.setEnabled(has_reasoning_models)
+        self.reasoning_model.setToolTip(self.t(
+            "reasoning_model_tooltip",
+            "Speichert die Stufe getrennt für jedes installierte Modell. Sie gilt im normalen Chat und bei Verwendung als Auto-Answer-LLM.",
+        ))
+        self.reasoning_model.currentIndexChanged.connect(self._load_selected_reasoning_override)
+        self.reasoning_model_effort.currentIndexChanged.connect(self._store_selected_reasoning_override)
+        self._load_selected_reasoning_override()
+
+        reasoning_hint = QLabel(self.t(
+            "reasoning_compatibility_hint",
+            "Nicht jedes Modell unterstützt Reasoning oder abgestufte Stärken. Die App nutzt die native Ollama-API und fällt bei älteren Laufzeiten kontrolliert zurück. GPT-OSS kann seine Reasoning-Spur nicht vollständig abschalten.",
+        ))
+        reasoning_hint.setObjectName("SubtleLabel")
+        reasoning_hint.setWordWrap(True)
+        self.content_layout.addWidget(reasoning_hint)
 
         self.debug_trace_enabled = QCheckBox(self.t("debug_trace_enabled_label", "Detailliertes Debug-Log schreiben"))
         self.debug_trace_enabled.setChecked(bool(self.config.get("debug_trace_enabled", False)))
@@ -1685,7 +1762,7 @@ class SettingsDialog(QDialog):
         llm_tokens_row = QHBoxLayout()
         llm_tokens_row.addWidget(QLabel(self.t("auto_answer_llm_max_tokens_label", "Maximale Tokens der Auto-Answer-LLM")), 1)
         self.auto_answer_llm_max_tokens = QSpinBox()
-        self.auto_answer_llm_max_tokens.setRange(32, 1024)
+        self.auto_answer_llm_max_tokens.setRange(32, 8192)
         self.auto_answer_llm_max_tokens.setSingleStep(16)
         self.auto_answer_llm_max_tokens.setValue(int(self.config.get("auto_answer_llm_max_tokens", 160) or 160))
         llm_tokens_row.addWidget(self.auto_answer_llm_max_tokens)
@@ -1756,14 +1833,14 @@ class SettingsDialog(QDialog):
         self.ollama_num_ctx.setToolTip(self.t("ollama_num_ctx_tooltip", "Wird nur verwendet, wenn die automatische Hardwareanpassung deaktiviert ist."))
         num_ctx_row.addWidget(self.ollama_num_ctx)
         limits_layout.addLayout(num_ctx_row)
-        self.ollama_num_ctx.setEnabled(not self.hardware_auto_context.isChecked())
-        self.hardware_auto_context.toggled.connect(lambda checked: self.ollama_num_ctx.setEnabled(not checked))
+        self.ollama_num_ctx.setEnabled(True)
 
         context_row = QHBoxLayout()
         context_row.addWidget(QLabel(self.t("context_limit_label", "Kontextfenster für Antworten (Nachrichten)")), 1)
         self.context_limit = QSpinBox()
-        self.context_limit.setRange(6, 200)
-        self.context_limit.setValue(int(self.config.get("context_message_limit", 8) or 8))
+        self.context_limit.setRange(0, 10000)
+        self.context_limit.setSpecialValueText(self.t("adaptive_limit", "Automatic (token budget)"))
+        self.context_limit.setValue(int(self.config.get("context_message_limit", 0)))
         self.context_limit.setToolTip(self.t("context_limit_tooltip", "Nur die letzten N Nachrichten werden an das Modell gesendet. Das kann längere Auto-Answer-Gespräche stabiler machen."))
         context_row.addWidget(self.context_limit)
         limits_layout.addLayout(context_row)
@@ -1771,11 +1848,15 @@ class SettingsDialog(QDialog):
         rollover_row = QHBoxLayout()
         rollover_row.addWidget(QLabel(self.t("rollover_carry_messages_label", "Letzte Dialogeinträge für Folge-Chat")), 1)
         self.rollover_carry_messages = QSpinBox()
-        self.rollover_carry_messages.setRange(2, 40)
-        self.rollover_carry_messages.setValue(int(self.config.get("rollover_carry_messages", AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES) or AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES))
+        self.rollover_carry_messages.setRange(0, 200)
+        self.rollover_carry_messages.setSpecialValueText(self.t("adaptive_limit", "Automatic (token budget)"))
+        self.rollover_carry_messages.setValue(int(self.config.get("rollover_carry_messages", 0)))
         self.rollover_carry_messages.setToolTip(self.t("rollover_carry_messages_tooltip", "Wie viele der letzten Chat-Einträge beim automatischen Folge-Chat übernommen werden. Falls der Kontext trotzem zu groß wäre, wird zusätzlich automatisch weiter gekürzt."))
         rollover_row.addWidget(self.rollover_carry_messages)
         limits_layout.addLayout(rollover_row)
+        self.context_defaults_btn = QPushButton(self.t("context_defaults_apply", "Apply adaptive discussion defaults"))
+        self.context_defaults_btn.clicked.connect(self._apply_context_defaults)
+        limits_layout.addWidget(self.context_defaults_btn)
 
         self.content_layout.addWidget(limits_frame)
 
@@ -2375,6 +2456,29 @@ class SettingsDialog(QDialog):
         elif combo.isEditable():
             combo.setCurrentText(value)
 
+    def _load_selected_reasoning_override(self, _index: int = -1) -> None:
+        if not hasattr(self, "reasoning_model") or not hasattr(self, "reasoning_model_effort"):
+            return
+        model_name = self.reasoning_model.currentText().strip()
+        value = self._model_reasoning_efforts.get(model_name, "default") if model_name else "default"
+        self._reasoning_override_syncing = True
+        try:
+            self._set_combo_data_value(self.reasoning_model_effort, value, 0)
+        finally:
+            self._reasoning_override_syncing = False
+
+    def _store_selected_reasoning_override(self, _index: int = -1) -> None:
+        if getattr(self, "_reasoning_override_syncing", False):
+            return
+        model_name = self.reasoning_model.currentText().strip() if hasattr(self, "reasoning_model") else ""
+        if not model_name:
+            return
+        value = str(self.reasoning_model_effort.currentData() or "default")
+        if value == "default":
+            self._model_reasoning_efforts.pop(model_name, None)
+        else:
+            self._model_reasoning_efforts[model_name] = normalize_reasoning_effort(value)
+
     def apply_config_to_widgets(self, profile_data: dict) -> None:
         merged = normalize_config(profile_data or {})
         if "tts_lexicon_enabled" not in merged:
@@ -2413,7 +2517,13 @@ class SettingsDialog(QDialog):
             self.auto_answer_use_question_replies_for_all.setChecked(bool(merged.get("auto_answer_use_question_replies_for_all", True)))
         if hasattr(self, "allow_consecutive_auto_answer_dataset_reuse"):
             self.allow_consecutive_auto_answer_dataset_reuse.setChecked(bool(merged.get("allow_consecutive_auto_answer_dataset_reuse", False)))
-        self.auto_thinking_for_code_requests.setChecked(bool(merged.get("auto_thinking_for_code_requests", True)))
+        self._set_combo_data_value(
+            self.reasoning_default_effort,
+            normalize_reasoning_effort(merged.get("reasoning_default_effort", "auto"), "auto"),
+            1,
+        )
+        self._model_reasoning_efforts = normalize_model_reasoning_efforts(merged.get("model_reasoning_efforts", {}))
+        self._load_selected_reasoning_override()
         self.debug_trace_enabled.setChecked(bool(merged.get("debug_trace_enabled", False)))
         self.persistent_knowledge_enabled.setChecked(bool(merged.get("persistent_knowledge_enabled", False)))
         self.knowledge_source_path.setText(str(merged.get("knowledge_source_path", "") or ""))
@@ -2437,7 +2547,7 @@ class SettingsDialog(QDialog):
         self.context_limit.setValue(int(merged.get("context_message_limit", DEFAULT_CONFIG["context_message_limit"]) or DEFAULT_CONFIG["context_message_limit"]))
         self.hardware_auto_context.setChecked(bool(merged.get("hardware_auto_context", True)))
         self.ollama_num_ctx.setValue(int(merged.get("ollama_num_ctx", self.hardware_profile.recommended_num_ctx) or self.hardware_profile.recommended_num_ctx))
-        self.ollama_num_ctx.setEnabled(not self.hardware_auto_context.isChecked())
+        self.ollama_num_ctx.setEnabled(True)
         self.rollover_carry_messages.setValue(int(merged.get("rollover_carry_messages", DEFAULT_CONFIG["rollover_carry_messages"]) or DEFAULT_CONFIG["rollover_carry_messages"]))
         self.sapi_rate_slider.setValue(int(merged.get("windows_sapi_rate", 0) or 0))
         self.sapi_pitch_slider.setValue(safe_int(merged.get("windows_sapi_pitch", DEFAULT_CONFIG["windows_sapi_pitch"]), DEFAULT_CONFIG["windows_sapi_pitch"]))
@@ -2570,6 +2680,14 @@ class SettingsDialog(QDialog):
             return
         self.knowledge_source_path.clear()
 
+    def _apply_context_defaults(self) -> None:
+        self.hardware_auto_context.setChecked(True)
+        self.ollama_num_ctx.setValue(DEFAULT_CONFIG["ollama_num_ctx"])
+        self.context_limit.setValue(0)
+        self.rollover_carry_messages.setValue(0)
+        self.auto_answer_short_answers.setChecked(False)
+        self.auto_answer_llm_max_tokens.setValue(DEFAULT_CONFIG["auto_answer_llm_max_tokens"])
+
     def get_config(self) -> dict:
         data = self.config.copy()
         data["interface_language"] = (self.interface_language.currentData() or "de").strip()
@@ -2608,7 +2726,12 @@ class SettingsDialog(QDialog):
             data["auto_answer_use_question_replies_for_all"] = self.auto_answer_use_question_replies_for_all.isChecked()
         if hasattr(self, "allow_consecutive_auto_answer_dataset_reuse"):
             data["allow_consecutive_auto_answer_dataset_reuse"] = self.allow_consecutive_auto_answer_dataset_reuse.isChecked()
-        data["auto_thinking_for_code_requests"] = self.auto_thinking_for_code_requests.isChecked()
+        self._store_selected_reasoning_override()
+        data["reasoning_default_effort"] = normalize_reasoning_effort(self.reasoning_default_effort.currentData(), "auto")
+        data["model_reasoning_efforts"] = normalize_model_reasoning_efforts(self._model_reasoning_efforts)
+        # Retain the legacy key so v2.2 profiles remain meaningful when opened
+        # by an older copy of the app.
+        data["auto_thinking_for_code_requests"] = data["reasoning_default_effort"] == "auto"
         data["debug_trace_enabled"] = self.debug_trace_enabled.isChecked()
         data["persistent_knowledge_enabled"] = self.persistent_knowledge_enabled.isChecked()
         data["knowledge_source_path"] = self.knowledge_source_path.text().strip()
@@ -3138,6 +3261,14 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = load_config()
         self.hardware_profile = detect_hardware()
+        self.context_decisions = {}
+        self.context_failure_caps = {}
+        self.token_estimate_factors = {}
+        self.preflight_queue = SimpleQueue()
+        self.preflight_active = False
+        self.preflight_serial = 0
+        self.generation_cancelled = False
+        self.last_ollama_stats = {}
         self.config, config_changed = resolve_tts_voice_config_defaults(self.config)
         if config_changed:
             save_config(self.config)
@@ -3145,6 +3276,7 @@ class MainWindow(QMainWindow):
         self.store = SessionStore()
         self.sessions = self.store.list_sessions()
         self.current_session: Optional[ChatSession] = None
+        self.navigation_message_index = None
         self.worker_thread: Optional[QThread] = None
         self.worker: Optional[ChatWorker] = None
         self.current_assistant_bubble: Optional[BubbleWidget] = None
@@ -3197,6 +3329,9 @@ class MainWindow(QMainWindow):
         self.asr_status_signal.connect(self._on_asr_status)
         self._tts_feedback_token = 0
         self._tts_feedback_elapsed_seconds = 0
+        self.preflight_timer = QTimer(self)
+        self.preflight_timer.setInterval(50)
+        self.preflight_timer.timeout.connect(self._poll_context_probe)
         self.auto_answer_timer = QTimer(self)
         self.auto_answer_timer.setSingleShot(True)
         self.auto_answer_timer.timeout.connect(self._safe_on_auto_answer_timer)
@@ -3232,6 +3367,7 @@ class MainWindow(QMainWindow):
 
         root_layout.addWidget(center, 1)
 
+        self.session_list.itemDoubleClicked.connect(lambda _item: self.show_session_history())
         self.refresh_sessions_ui()
         self.refresh_models()
         if self.sessions:
@@ -3266,15 +3402,20 @@ class MainWindow(QMainWindow):
             "auto_answer_phrase_repeat_lookback": safe_int(self.config.get("auto_answer_phrase_repeat_lookback", 4), 4),
             "auto_answer_max_rounds": int(self.config.get("auto_answer_max_rounds", 0) or 0),
             "chat_max_tokens": int(self.config.get("chat_max_tokens", 8192) or 8192),
-            "context_message_limit": int(self.config.get("context_message_limit", 8) or 8),
+            "context_message_limit": int(self.config.get("context_message_limit", 0)),
             "hardware_auto_context": bool(self.config.get("hardware_auto_context", True)),
             "ollama_num_ctx_effective": int(self._effective_ollama_num_ctx()),
             "hardware_profile": self.hardware_profile.to_dict(),
-            "rollover_carry_messages": int(self.config.get("rollover_carry_messages", AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES) or AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES),
+            "rollover_carry_messages": int(self.config.get("rollover_carry_messages", 0)),
             "tts_backend": self.config.get("tts_backend", "disabled"),
             "auto_read_assistant_responses": bool(self.config.get("auto_read_assistant_responses", True)),
             "auto_read_user_inputs": bool(self.config.get("auto_read_user_inputs", True)),
-            "auto_thinking_for_code_requests": bool(self.config.get("auto_thinking_for_code_requests", True)),
+            "reasoning_default_effort": normalize_reasoning_effort(self.config.get("reasoning_default_effort", "auto"), "auto"),
+            "current_model_reasoning_configured": configured_reasoning_effort(
+                self.config,
+                self.model_combo.currentText().strip() if hasattr(self, "model_combo") else str(self.config.get("last_model", "") or ""),
+            ),
+            "model_reasoning_override_count": len(normalize_model_reasoning_efforts(self.config.get("model_reasoning_efforts", {}))),
             "debug_trace_enabled": bool(self.config.get("debug_trace_enabled", False)),
             "persistent_knowledge_enabled": bool(self.config.get("persistent_knowledge_enabled", False)),
             "knowledge_source_path": str(self.config.get("knowledge_source_path", "") or ""),
@@ -3448,6 +3589,8 @@ class MainWindow(QMainWindow):
 
     def _request_system_prompt_with_knowledge(self, query: str = "") -> str:
         base = self.request_system_prompt()
+        if self.current_session and self.current_session.continuity_memory:
+            base = (base + "\n\n" + memory_prompt(self.current_session.continuity_memory)).strip()
         memory_context = self._knowledge_retrieval_context(query)
         if not memory_context:
             return base
@@ -3984,17 +4127,99 @@ class MainWindow(QMainWindow):
 
     def _on_session_clicked(self, item: QListWidgetItem) -> None:
         session_id = item.data(Qt.ItemDataRole.UserRole)
-        if session_id:
-            self.open_session(session_id)
+        if session_id and not (self.preflight_active or self.worker_thread or self.auto_answer_llm_thread):
+            self.auto_answer_timer.stop()
+            self.pending_auto_answer_source = ""
+            self.pending_auto_answer_after_cleanup = ""
+            self.open_session(session_id, message_index=item.data(int(Qt.ItemDataRole.UserRole) + 1))
 
     def refresh_sessions_ui(self) -> None:
         self.session_list.clear()
         self.sessions = self.store.list_sessions()
         for session in self.sessions:
-            item = QListWidgetItem(session.title)
+            label = (f"{session.continuation_index + 1:02d} · {session.topic_title}\n{session.root_topic[:36]}"
+                     if session.continuation_index and session.topic_title else session.title)
+            item = QListWidgetItem(label)
+            if session.continuation_index:
+                item.setSizeHint(QSize(0, 52))
             item.setData(Qt.ItemDataRole.UserRole, session.session_id)
-            item.setToolTip(f"{session.title}\n{pretty_timestamp(session.updated_at)}")
+            item.setToolTip(f"{session.title}\n{pretty_timestamp(session.created_at)} → {pretty_timestamp(session.updated_at)}"
+                            f"\n{session.model_name} · {getattr(session, 'stored_message_count', len(session.messages))} messages · {len(session.continuity_memory)} memory excerpts"
+                            f"\nID: {session.session_id[:8]} · parent: {(session.continuation_of or '—')[:8]}"
+                            + "\n" + "\n".join(f"{h.get('time', '')}: {h.get('title', '')}" for h in session.title_history[-8:])
+                            + ("\n" + str(session.rollover_diagnostics) if session.rollover_diagnostics else ""))
             self.session_list.addItem(item)
+            if self.current_session and session.session_id == self.current_session.session_id and self.navigation_message_index is None:
+                self.session_list.setCurrentItem(item)
+            # A topic change need not consume memory or create a new Ollama context.
+            # Expose persisted title positions as independently selectable bookmarks.
+            positions = {}
+            for event in session.title_history:
+                try:
+                    index = int(event.get("message_index", -1))
+                except (TypeError, ValueError):
+                    continue
+                title = str(event.get("title", "")).strip()
+                if index >= 0 and title:
+                    positions[index] = event
+            for index, event in sorted(positions.items()):
+                bookmark = QListWidgetItem(f"↳ {event['title']}\n" + self.t("section_at_message", "Section at message {number}").format(number=index + 1))
+                bookmark.setSizeHint(QSize(0, 48))
+                bookmark.setData(Qt.ItemDataRole.UserRole, session.session_id)
+                bookmark.setData(int(Qt.ItemDataRole.UserRole) + 1, index)
+                bookmark.setToolTip(f"{event['title']}\n{event.get('time', '')}\n" + self.t("section_jump_hint", "Click to jump to this point in the saved conversation."))
+                self.session_list.addItem(bookmark)
+                if self.current_session and session.session_id == self.current_session.session_id and index == self.navigation_message_index:
+                    self.session_list.setCurrentItem(bookmark)
+
+    def _update_session_title(self) -> None:
+        session = self.current_session
+        if not session:
+            return
+        own = session.messages[session.carried_messages:]
+        if not own:
+            return
+        focus = infer_topic_title(own[-4:], session.topic_title or session.title, 38)
+        if not session.root_topic:
+            session.root_topic = infer_topic_title(own[:2], focus, 26)
+        session.topic_title = focus
+        title = focus
+        if session.continuation_index:
+            root = session.root_topic[:26]
+            title = f"{root} — {focus} · {session.continuation_index + 1:02d}"
+        if title != session.title:
+            session.title = title
+            session.title_history.append({"time": datetime.now().isoformat(timespec="seconds"),
+                "title": title, "message_index": len(session.messages) - 1})
+
+    def show_session_history(self) -> None:
+        session = self.current_session
+        if not session or self.worker_thread is not None or self.preflight_active or self.auto_answer_llm_thread is not None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.t("section_history", "Section history and handover"))
+        dialog.resize(780, 600)
+        layout = QVBoxLayout(dialog)
+        view = QPlainTextEdit()
+        view.setReadOnly(True)
+        lines = [session.title, f"{session.created_at} → {session.updated_at}", "",
+                 self.t("section_titles", "Title development:")]
+        lines.extend(f"{h.get('time', '')} · #{int(h.get('message_index', 0)) + 1}: {h.get('title', '')}" for h in session.title_history)
+        lines.extend(["", self.t("section_memory", "Handover excerpts (lossy; original chats remain available):"), memory_prompt(session.continuity_memory)])
+        lines.extend(["", self.t("section_diagnostics", "Context / transition diagnostics:"), json.dumps(session.rollover_diagnostics, ensure_ascii=False, indent=2)])
+        view.setPlainText("\n".join(lines))
+        layout.addWidget(view)
+        if session.continuation_of:
+            previous = QPushButton(self.t("open_previous_section", "Open previous section"))
+            def open_previous():
+                dialog.accept()
+                self.open_session(session.continuation_of)
+            previous.clicked.connect(open_previous)
+            layout.addWidget(previous)
+        close = QPushButton(self.t("close_button", "Close"))
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
+        dialog.exec()
 
     def create_new_session(self) -> None:
         now = datetime.now().isoformat(timespec="seconds")
@@ -4035,8 +4260,8 @@ class MainWindow(QMainWindow):
         self._set_request_feedback("idle")
         self._set_tts_feedback('idle')
 
-    def open_session(self, session_id: str) -> None:
-        if self.current_session is not None and self.current_session.session_id != session_id:
+    def open_session(self, session_id: str, preserve_flow: bool = False, message_index: int | None = None) -> None:
+        if not preserve_flow and self.current_session is not None and self.current_session.session_id != session_id:
             self.auto_answer_timer.stop()
             self.pending_auto_answer_source = ""
             self.pending_auto_answer_after_cleanup = ""
@@ -4046,14 +4271,11 @@ class MainWindow(QMainWindow):
             self.auto_answer_rounds_current = 0
             if self.current_audio_message is not None:
                 self.stop_audio_playback(silent=True)
-        target = None
-        for session in self.store.list_sessions():
-            if session.session_id == session_id:
-                target = session
-                break
+        target = self.store.load(session_id)
         if target is None:
             return
         self.current_session = target
+        self.navigation_message_index = max(0, min(message_index, len(target.messages) - 1)) if isinstance(message_index, int) and target.messages else None
         self.current_assistant_bubble = None
         self.current_assistant_text = ""
 
@@ -4064,12 +4286,13 @@ class MainWindow(QMainWindow):
 
         for i in range(self.session_list.count()):
             item = self.session_list.item(i)
-            if item.data(Qt.ItemDataRole.UserRole) == session_id:
+            if item.data(Qt.ItemDataRole.UserRole) == session_id and item.data(int(Qt.ItemDataRole.UserRole) + 1) == self.navigation_message_index:
                 self.session_list.setCurrentItem(item)
                 break
         self._set_request_feedback("idle")
         self._set_tts_feedback('idle')
-        self._clear_pending_context_attachments()
+        if not preserve_flow:
+            self._clear_pending_context_attachments()
         self._debug_log("session_opened", {"opened_session_id": session_id, "opened_session_title": target.title})
 
     def clear_chat_layout(self) -> None:
@@ -4282,33 +4505,90 @@ class MainWindow(QMainWindow):
         keys.reverse()
         return keys
 
-    def _effective_ollama_num_ctx(self) -> int:
-        if bool(self.config.get("hardware_auto_context", True)):
-            return int(self.hardware_profile.recommended_num_ctx)
-        return max(2048, int(self.config.get("ollama_num_ctx", 8192) or 8192))
+    def _context_key(self, model: str = "") -> tuple[str, str]:
+        return (self.config.get("ollama_base_url", "").rstrip('/'), model or self.model_combo.currentText().strip())
+
+    def _effective_ollama_num_ctx(self, model: str = "") -> int:
+        key = self._context_key(model)
+        fallback = min(4096, int(self.config.get("ollama_num_ctx", 32768)))
+        return int(self.context_decisions.get(key, {}).get("num_ctx", fallback))
+
+    def _estimated_prompt(self, messages: list[dict], system_prompt: str) -> int:
+        factor = self.token_estimate_factors.get(self._context_key(), 1.0)
+        return int(estimate_chat_payload_tokens(messages, system_prompt) * factor)
 
     def _effective_num_predict(self, messages: list[dict], system_prompt: str) -> int:
-        configured = max(64, int(self.config.get("chat_max_tokens", 8192) or 8192))
-        num_ctx = self._effective_ollama_num_ctx()
-        prompt_tokens = estimate_chat_payload_tokens(messages, system_prompt)
-        available = max(64, num_ctx - prompt_tokens - 128)
-        return min(configured, available)
+        configured = max(64, int(self.config.get("chat_max_tokens", 8192)))
+        return min(configured, max(64, self._request_token_budget() - self._estimated_prompt(messages, system_prompt)))
 
     def _session_rollover_threshold(self) -> int:
-        limit = int(self.config.get("context_message_limit", AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT) or AUTO_ANSWER_ROLLOVER_FALLBACK_LIMIT)
-        return max(6, limit)
+        return max(0, int(self.config.get("context_message_limit", 0)))
 
     def _rollover_carry_message_count(self) -> int:
-        configured = int(self.config.get("rollover_carry_messages", AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES) or AUTO_ANSWER_ROLLOVER_CARRY_MESSAGES)
-        return max(2, configured)
+        return max(0, int(self.config.get("rollover_carry_messages", 0)))
 
     def _request_token_budget(self) -> int:
-        # Leave a safety margin for model output, protocol overhead and tokenizer variance.
-        return max(AUTO_ANSWER_ROLLOVER_TOKEN_MIN_BUDGET, int(self._effective_ollama_num_ctx() * 0.88))
+        return request_token_budget(self._effective_ollama_num_ctx())
+
+    def _rollover_output_reserve(self) -> int:
+        return rollover_output_reserve(self._effective_ollama_num_ctx(), self.config.get("chat_max_tokens", 8192))
 
     def _would_exceed_request_budget(self, messages: list[dict], system_prompt: str) -> bool:
-        projected = estimate_chat_payload_tokens(messages, system_prompt) + max(0, int(self.config.get("chat_max_tokens", 512) or 512))
-        return projected > self._request_token_budget()
+        return self._estimated_prompt(messages, system_prompt) + self._rollover_output_reserve() > self._request_token_budget()
+
+    def _probe_context(self, model: str, demand: int, callback) -> None:
+        if self.preflight_active:
+            return
+        self.preflight_active = True
+        self.preflight_serial += 1
+        serial = self.preflight_serial
+        key = self._context_key(model)
+        self._preflight_callback = callback
+        self._set_generation_ui_locked(True)
+        self.stop_btn.setEnabled(True)
+        self.statusBar().showMessage(self.t("context_probe", "Checking model context and memory reserves …"))
+        queue = self.preflight_queue
+        config = dict(self.config)
+        previous = self.context_decisions.get(key, {}).get("num_ctx", 0)
+        failure_cap = self.context_failure_caps.get(key, 0)
+        def run():
+            try:
+                snapshot = collect_runtime(key[0], model)
+                decision = choose_context(snapshot, demand, int(config.get("ollama_num_ctx", 32768)),
+                    previous, failure_cap, bool(config.get("hardware_auto_context", True)))
+            except Exception as exc:
+                decision = {"num_ctx": min(4096, failure_cap or 4096, int(config.get("ollama_num_ctx", 32768))), "reason": "probe_unavailable", "error": str(exc)}
+            queue.put((serial, key, decision))
+        threading.Thread(target=run, daemon=True, name="context-probe").start()
+        self.preflight_timer.start()
+
+    def _poll_context_probe(self) -> None:
+        try:
+            serial, key, decision = self.preflight_queue.get_nowait()
+        except Empty:
+            return
+        if serial != self.preflight_serial:
+            return
+        self.preflight_active = False
+        self.preflight_timer.stop()
+        self.context_decisions[key] = decision
+        if self.current_session:
+            self.current_session.rollover_diagnostics["last_context_decision"] = decision
+            self.store.save(self.current_session)
+        self._debug_log("context_decision", decision)
+        if decision.get("blocked"):
+            self._set_generation_ui_locked(False)
+            self.stop_btn.setEnabled(False)
+            self.context_retry_in_progress = False
+            self.statusBar().showMessage(self.t("context_reserve_low", "Not enough memory reserve. Close other workloads before trying again; your input is saved."), 15000)
+            return
+        try:
+            self._preflight_callback()
+        except Exception as exc:
+            self._set_generation_ui_locked(False)
+            self.stop_btn.setEnabled(False)
+            self.statusBar().showMessage(str(exc), 10000)
+            self._debug_log("request_preparation_failed", {"error": str(exc)})
 
     def _clone_message_for_rollover(self, msg: ChatMessage) -> ChatMessage:
         return ChatMessage(
@@ -4322,96 +4602,55 @@ class MainWindow(QMainWindow):
             auto_answer_source_key=getattr(msg, "auto_answer_source_key", None),
         )
 
-    def _trim_carry_messages_to_budget(self, messages: list[ChatMessage], system_prompt: str) -> tuple[list[ChatMessage], bool]:
-        trimmed = list(messages)
-        shortened = False
-        while len(trimmed) > 1:
-            payload = [{"role": item.role, "content": item.content} for item in trimmed if item.role in {"user", "assistant"}]
-            if not self._would_exceed_request_budget(payload, system_prompt):
-                break
-            shortened = True
-            trimmed = trimmed[1:]
-            while trimmed and trimmed[0].role == "assistant" and len(trimmed) > 1:
-                trimmed = trimmed[1:]
-
-        if trimmed:
-            payload = [{"role": item.role, "content": item.content} for item in trimmed if item.role in {"user", "assistant"}]
-            if self._would_exceed_request_budget(payload, system_prompt):
-                shortened = True
-                item = trimmed[-1]
-                # Preserve the complete original chat; only the cloned carry-over item is shortened.
-                max_chars = max(1200, int(self._request_token_budget() * 2.2))
-                content = str(item.content or "")
-                if len(content) > max_chars:
-                    marker = self.t("rollover_content_shortened_marker", "[Earlier content shortened for the continuation chat]")
-                    content = content[-max_chars:]
-                    item.content = f"{marker}\n\n{content}"
-                    if item.display_content:
-                        item.display_content = item.content
-        return trimmed, shortened
-
-    def _ensure_safe_session_capacity(
-        self,
-        additional_messages: int = 0,
-        auto_answer_only: bool = False,
-        pending_messages: list[dict] | None = None,
-        system_prompt: str = "",
-        force: bool = False,
-    ) -> bool:
+    def _ensure_safe_session_capacity(self, additional_messages: int = 0,
+            auto_answer_only: bool = False, pending_messages=None, system_prompt: str = "", force: bool = False) -> bool:
         if not self.current_session:
             return False
-        if auto_answer_only and not self.auto_answer_checkbox.isChecked():
-            return False
+        old = self.current_session
         threshold = self._session_rollover_threshold()
-        current_count = len(self.current_session.messages)
-        exceeds_count = current_count + max(0, int(additional_messages or 0)) > threshold
+        own_count = len(old.messages) - old.carried_messages
+        exceeds_count = threshold > 0 and own_count + additional_messages > threshold
         exceeds_budget = bool(pending_messages) and self._would_exceed_request_budget(pending_messages, system_prompt)
-        if not force and not exceeds_count and not exceeds_budget:
+        if not (force or exceeds_count or exceeds_budget):
             return False
-        configured_carry = self._rollover_carry_message_count()
-        if force:
-            configured_carry = min(configured_carry, 2)
-        carry_count = min(configured_carry, max(1, current_count))
-        carry_messages = [
-            self._clone_message_for_rollover(msg)
-            for msg in self.current_session.messages[-carry_count:]
-            if msg.role in {"user", "assistant"}
-        ]
-        if not carry_messages:
+        if len(old.messages) <= 1:
             return False
-        carry_messages, shortened = self._trim_carry_messages_to_budget(carry_messages, system_prompt)
-        if not carry_messages:
-            return False
-        old_title = self.current_session.title
+        base_prompt = self.request_system_prompt()
+        factor = self.token_estimate_factors.get(self._context_key(), 1.0)
+        budget = int((self._request_token_budget() - self._rollover_output_reserve()) / factor)
+        memory_budget = max(0, min(int(budget * .22), budget - estimate_chat_payload_tokens(pending_messages[-1:] if pending_messages else [], base_prompt) - 64))
+        candidates = [self._clone_message_for_rollover(m) for m in old.messages if m.content.strip()]
+        initial_carry = select_carry(candidates, base_prompt, max(64, int(budget * .80) - memory_budget), self._rollover_carry_message_count())
+        omitted = old.messages[:-len(initial_carry)] if initial_carry else old.messages
+        memory = build_memory(old.continuity_memory, omitted, old.session_id, memory_budget)
+        # Leave room for fresh dialogue instead of rolling again after one reply.
+        carry_prompt = base_prompt + "\n\n" + memory_prompt(memory)
+        candidates = [self._clone_message_for_rollover(m) for m in old.messages if m.content.strip()]
+        carry = select_carry(candidates, carry_prompt, int(budget * .80), self._rollover_carry_message_count())
+        if not carry or estimate_chat_payload_tokens([{"role": m.role, "content": m.content} for m in carry], carry_prompt) > budget:
+            return False  # oversized latest input is reported, never silently truncated
+        self._update_session_title()
+        self.store.save(old)
         now = datetime.now().isoformat(timespec="seconds")
-        continuation_suffix = self.t("continuation_suffix", " (Fortsetzung)")
-        new_title = old_title if old_title.endswith(continuation_suffix) else f"{old_title}{continuation_suffix}"
-        session = ChatSession(
-            session_id=uuid.uuid4().hex,
-            title=new_title,
-            created_at=now,
-            updated_at=now,
-            model_name=self.model_combo.currentText().strip(),
-            messages=carry_messages,
-            reapply_short_instruction_after_rollover=True,
-        )
+        index = infer_continuation_index(old.title, old.continuation_index) + 1
+        topic = infer_topic_title(carry[-4:], old.topic_title or old.title, 38)
+        root = old.root_topic or old.topic_title or strip_continuation_suffix(old.title)
+        session = ChatSession(session_id=uuid.uuid4().hex,
+            title=f"{root[:26]} — {topic} · {index + 1:02d}", created_at=now, updated_at=now,
+            model_name=self.model_combo.currentText().strip(), messages=carry,
+            reapply_short_instruction_after_rollover=True, continuation_index=index,
+            continuation_of=old.session_id, topic_title=topic, root_topic=root,
+            carried_messages=len(carry), continuity_memory=memory,
+            rollover_diagnostics={"reason": "retry" if force else "message_limit" if exceeds_count else "context_budget",
+                "num_ctx": self._effective_ollama_num_ctx(), "previous_messages": len(old.messages),
+                "carried": len(carry), "memory_excerpts": len(memory),
+                "policy": self.context_decisions.get(self._context_key(), {}).get("reason", "")})
         self.store.save(session)
         self.refresh_sessions_ui()
-        self.open_session(session.session_id)
-        status_key = "chat_rollover_trimmed_message" if shortened else "chat_rollover_message"
-        status_default = "Ein neuer Folge-Chat wurde mit den letzten Nachrichten geöffnet, damit das Gespräch stabil weiterlaufen kann."
-        if shortened:
-            status_default = "Ein neuer Folge-Chat wurde geöffnet. Dabei wurden automatisch nur so viele letzte Nachrichten übernommen, dass der Kontext stabil weiterlaufen kann."
-        self.statusBar().showMessage(self.t(status_key, status_default), 5000)
-        self._debug_log("session_rollover", {
-            "reason": {"message_count_exceeded": bool(exceeds_count), "token_budget_exceeded": bool(exceeds_budget)},
-            "threshold_message_limit": int(threshold),
-            "carry_count_requested": int(carry_count),
-            "carry_count_final": len(carry_messages),
-            "carry_messages_shortened": bool(shortened),
-            "new_session_id": session.session_id,
-            "new_session_title": session.title,
-        })
+        self.open_session(session.session_id, preserve_flow=True)
+        self.statusBar().showMessage(self.t("chat_rollover_message", "Continuation opened with handover and recent dialogue."), 5000)
+        self._debug_log("session_rollover", {"previous_session_id": old.session_id, "new_session_id": session.session_id,
+            **session.rollover_diagnostics})
         return True
 
     def _current_auto_answer_short_instruction(self) -> str:
@@ -4423,7 +4662,7 @@ class MainWindow(QMainWindow):
     def _request_message_items(self) -> list[ChatMessage]:
         if not self.current_session:
             return []
-        items = [item for item in self.current_session.messages if item.role in {"user", "assistant"}]
+        items = [item for item in self.current_session.messages if item.role in {"user", "assistant"} and item.content.strip()]
         if items and items[-1].role == "assistant" and not (items[-1].content or "").strip():
             items = items[:-1]
         return items
@@ -4457,13 +4696,18 @@ class MainWindow(QMainWindow):
                 return (message_visible_content(item) or item.content or "").strip()
         return ""
 
-    def _should_use_auto_thinking_for_current_request(self) -> bool:
-        if not bool(self.config.get("auto_thinking_for_code_requests", True)):
-            return False
-        model_name = self.model_combo.currentText().strip().lower()
-        if "qwen3.5:9b" not in model_name and "qwen3.5" not in model_name:
-            return False
-        return text_looks_like_code_request(self._latest_user_visible_text(), self.config.get("interface_language", "de"))
+    def _current_request_is_code_request(self) -> bool:
+        return text_looks_like_code_request(
+            self._latest_user_visible_text(),
+            self.config.get("interface_language", "de"),
+        )
+
+    def _reasoning_effort_for_model(self, model_name: str, *, is_code_request: bool = False) -> str:
+        return resolve_reasoning_effort(
+            self.config,
+            model_name,
+            is_code_request=is_code_request,
+        )
 
     def request_system_prompt(self) -> str:
         base_prompt = resolve_configured_personality_prompt(
@@ -4471,7 +4715,7 @@ class MainWindow(QMainWindow):
             "assistant",
             str(self.config.get("interface_language", "de") or "de"),
         ).strip()
-        if not self._should_use_auto_thinking_for_current_request():
+        if not self._current_request_is_code_request():
             return base_prompt
         extra = code_request_instruction(self.config.get("interface_language", "de"))
         return f"{base_prompt}\n\n{extra}".strip() if base_prompt else extra
@@ -4481,9 +4725,6 @@ class MainWindow(QMainWindow):
             return []
         raw_items = self._request_message_items()
         messages = [{"role": item.role, "content": item.content} for item in raw_items]
-        limit = int(self.config.get("context_message_limit", 8) or 8)
-        if limit > 0 and len(messages) > limit:
-            messages = messages[-limit:]
         return messages
 
 
@@ -4507,9 +4748,9 @@ class MainWindow(QMainWindow):
         self._debug_log("auto_answer_toggled", {"checked": bool(checked)})
 
     def _append_user_message(self, text: str, generated: bool = False, auto_answer_source_kind: str = "", auto_answer_source_key: str = "") -> ChatMessage:
+        self.navigation_message_index = None
         if not self.current_session:
             self.create_new_session()
-        self._ensure_safe_session_capacity(additional_messages=2, auto_answer_only=True)
         stored_content, visible_text, embedded_short_instruction = self._build_user_message_content(text)
         user_message = ChatMessage.now("user", stored_content, generated=generated, display_content=visible_text, auto_answer_source_kind=auto_answer_source_kind or None, auto_answer_source_key=auto_answer_source_key or None)
         if generated:
@@ -4522,6 +4763,7 @@ class MainWindow(QMainWindow):
         if self.current_session.title == self.t("new_conversation", "Neue Unterhaltung"):
             self.current_session.title = visible_text[:48] + ("…" if len(visible_text) > 48 else "")
         self.current_session.model_name = self.model_combo.currentText().strip()
+        self._update_session_title()
         self.store.save(self.current_session)
         self.refresh_sessions_ui()
         bubble = self.add_message_bubble(user_message)
@@ -4542,6 +4784,14 @@ class MainWindow(QMainWindow):
         return user_message
 
     def _begin_assistant_request(self) -> None:
+        if self.preflight_active or self.worker_thread is not None:
+            return
+        self.generation_cancelled = False
+        demand = int((self._estimated_prompt(self.session_messages_for_api(), self._request_system_prompt_with_knowledge())
+                     + self._rollover_output_reserve()) / .80)
+        self._probe_context(self.model_combo.currentText().strip(), demand, self._begin_prepared_assistant_request)
+
+    def _begin_prepared_assistant_request(self) -> None:
         system_prompt = self._request_system_prompt_with_knowledge()
         preview_messages = self.session_messages_for_api()
         self._ensure_safe_session_capacity(
@@ -4551,8 +4801,15 @@ class MainWindow(QMainWindow):
             system_prompt=system_prompt,
         )
         system_prompt = self._request_system_prompt_with_knowledge()
-        think_mode = self._should_use_auto_thinking_for_current_request()
+        if self._would_exceed_request_budget(self.session_messages_for_api(), system_prompt):
+            self._set_generation_ui_locked(False)
+            self.stop_btn.setEnabled(False)
+            self.context_retry_in_progress = False
+            self.statusBar().showMessage(self.t("context_input_too_large", "Input/system prompt exceeds the safe context. Shorten attachments or raise the context ceiling. The original input is saved."), 15000)
+            return
         selected_model = self.model_combo.currentText().strip()
+        is_code_request = self._current_request_is_code_request()
+        reasoning_effort = self._reasoning_effort_for_model(selected_model, is_code_request=is_code_request)
         previous_model = (self.last_requested_model or "").strip()
         assistant_message = ChatMessage.now("assistant", "")
         self.current_session.messages.append(assistant_message)
@@ -4565,6 +4822,7 @@ class MainWindow(QMainWindow):
                 pass
         self.current_assistant_text = ""
         self.current_assistant_thinking = ""
+        self.last_ollama_stats = {}
         self._last_stream_render_at = 0.0
         self._last_stream_render_chars = 0
         self.last_requested_model = selected_model
@@ -4580,7 +4838,9 @@ class MainWindow(QMainWindow):
             "response_max_tokens_effective": self._effective_num_predict(messages, system_prompt),
             "ollama_num_ctx_effective": self._effective_ollama_num_ctx(),
             "request_total_budget_estimated": request_prompt_tokens + self._effective_num_predict(messages, system_prompt),
-            "think_mode": bool(think_mode),
+            "reasoning_effort": reasoning_effort,
+            "reasoning_configured": configured_reasoning_effort(self.config, selected_model),
+            "code_request_detected": bool(is_code_request),
             "latest_user_text": self._latest_user_visible_text(),
             "retrieved_knowledge_titles": [item.get("title", "") for item in self.last_retrieved_knowledge_hits],
         }
@@ -4588,14 +4848,14 @@ class MainWindow(QMainWindow):
         self._debug_log("request_prepared", {"request": dict(self.current_request_debug_info)})
         self._set_request_feedback("sent")
         self._flush_chat_ui()
-        self.start_worker(messages, system_prompt, think_mode)
+        self.start_worker(messages, system_prompt, reasoning_effort)
         self.stop_btn.setEnabled(True)
         self._set_request_feedback("waiting")
 
     def _schedule_auto_answer(self, source_text: str) -> None:
         if not self.auto_answer_checkbox.isChecked():
             return
-        if self.worker_thread is not None or self.auto_answer_llm_thread is not None:
+        if self.preflight_active or self.worker_thread is not None or self.auto_answer_llm_thread is not None:
             return
         if self.input_box.toPlainText().strip():
             return
@@ -4668,7 +4928,7 @@ class MainWindow(QMainWindow):
         )
         return f"{base}\n\n{suffix}".strip()
 
-    def _auto_answer_llm_messages(self, source_text: str) -> list[dict]:
+    def _auto_answer_llm_messages(self, source_text: str, model_name: str = "") -> list[dict]:
         lines: list[str] = []
         if bool(self.config.get("auto_answer_llm_include_recent_context", True)) and self.current_session:
             recent = [m for m in self.current_session.messages if m.role in {"user", "assistant"} and (message_visible_content(m) or "").strip()][-6:]
@@ -4677,7 +4937,14 @@ class MainWindow(QMainWindow):
                 lines.append(f"{role}: {message_visible_content(item).strip()}")
         if not lines or not any(source_text.strip() in line for line in lines[-2:]):
             lines.append(f"{self.t('assistant_label', 'Assistant')}: {source_text.strip()}")
+        model = model_name or str(self.config.get("auto_answer_llm_model", "") or "").strip() or self.model_combo.currentText().strip()
+        limit = request_token_budget(self._effective_ollama_num_ctx(model)) - min(int(self.config.get("auto_answer_llm_max_tokens", 512)), self._effective_ollama_num_ctx(model) // 4)
+        memory = memory_prompt(self.current_session.continuity_memory) if self.current_session else ""
+        while len(lines) > 1 and estimate_token_count("\n".join(lines) + memory + self._auto_answer_llm_prompt()) > limit - 128:
+            lines.pop(0)
         transcript = "\n".join(lines)
+        if memory:
+            transcript = memory + "\n\n" + transcript
         memory_context = self._knowledge_retrieval_context(source_text)
         request = self.t(
             "auto_answer_llm_request_template",
@@ -4697,6 +4964,22 @@ class MainWindow(QMainWindow):
         model_name = str(self.config.get("auto_answer_llm_model", "") or "").strip() or self.model_combo.currentText().strip()
         if not model_name:
             return False
+        self.generation_cancelled = False
+        demand = estimate_chat_payload_tokens(self._auto_answer_llm_messages(source_text, model_name), self._auto_answer_llm_prompt()) + 1024
+        self._probe_context(model_name, demand, lambda: self._start_prepared_auto_answer_llm(source_text, model_name))
+        return True
+
+    def _start_prepared_auto_answer_llm(self, source_text: str, model_name: str) -> bool:
+        messages = self._auto_answer_llm_messages(source_text, model_name)
+        system = self._auto_answer_llm_prompt()
+        budget = request_token_budget(self._effective_ollama_num_ctx(model_name))
+        factor = self.token_estimate_factors.get(self._context_key(model_name), 1.0)
+        available = budget - int(estimate_chat_payload_tokens(messages, system) * factor)
+        if available < 64:
+            self._set_generation_ui_locked(False)
+            self.stop_btn.setEnabled(False)
+            self.statusBar().showMessage(self.t("context_input_too_large", "Input exceeds the safe context. Shorten the prompt."), 15000)
+            return False
         self.auto_answer_llm_fallback_source = source_text
         self.auto_answer_llm_session_id = self.current_session.session_id if self.current_session else ""
         self._set_generation_ui_locked(True)
@@ -4704,10 +4987,11 @@ class MainWindow(QMainWindow):
         self.auto_answer_llm_worker = AutoAnswerLLMWorker(
             base_url=self.config.get("ollama_base_url", "http://127.0.0.1:11434").strip(),
             model_name=model_name,
-            messages=self._auto_answer_llm_messages(source_text),
-            system_prompt=self._auto_answer_llm_prompt(),
-            max_tokens=int(self.config.get("auto_answer_llm_max_tokens", 160) or 160),
-            num_ctx=self._effective_ollama_num_ctx(),
+            messages=messages,
+            system_prompt=system,
+            max_tokens=min(int(self.config.get("auto_answer_llm_max_tokens", 512)), available),
+            num_ctx=self._effective_ollama_num_ctx(model_name),
+            reasoning_effort=self._reasoning_effort_for_model(model_name, is_code_request=False),
         )
         self.auto_answer_llm_worker.moveToThread(self.auto_answer_llm_thread)
         self.auto_answer_llm_thread.started.connect(self.auto_answer_llm_worker.run)
@@ -4735,7 +5019,7 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self._begin_assistant_request)
 
     def _on_auto_answer_llm_finished(self, text: str) -> None:
-        if not self.auto_answer_checkbox.isChecked():
+        if self.generation_cancelled or not text.strip() or not self.auto_answer_checkbox.isChecked():
             self.auto_answer_llm_fallback_source = ""
             return
         if not self.current_session or self.current_session.session_id != self.auto_answer_llm_session_id:
@@ -4747,9 +5031,16 @@ class MainWindow(QMainWindow):
         self.auto_answer_llm_fallback_source = ""
 
     def _on_auto_answer_llm_failed(self, error: str) -> None:
+        if self.generation_cancelled:
+            return
         source = self.auto_answer_llm_fallback_source or self.pending_auto_answer_source
         self.auto_answer_llm_fallback_source = ""
         self._debug_log("auto_answer_llm_failed", {"error": error, "source_text": source})
+        if is_memory_error(error) or is_context_overflow_error(error):
+            model = str(self.config.get("auto_answer_llm_model", "") or "").strip() or self.model_combo.currentText().strip()
+            self.context_failure_caps[self._context_key(model)] = max(2048, self._effective_ollama_num_ctx(model) // 2)
+            self.statusBar().showMessage(error, 10000)
+            return
         phrase_data = load_auto_answer_data(self.config.get("interface_language", "de"))
         question_data = load_auto_answer_question_reply_data(self.config.get("interface_language", "de"))
         fallback = generate_auto_answer(
@@ -4768,7 +5059,7 @@ class MainWindow(QMainWindow):
     def _on_auto_answer_timer(self) -> None:
         if not self.auto_answer_checkbox.isChecked():
             return
-        if self.worker_thread is not None or self.auto_answer_llm_thread is not None:
+        if self.preflight_active or self.worker_thread is not None or self.auto_answer_llm_thread is not None:
             return
         if self.input_box.toPlainText().strip():
             return
@@ -4816,7 +5107,7 @@ class MainWindow(QMainWindow):
             if not self.model_combo.currentText().strip():
                 self.statusBar().showMessage(self.t('ollama_wait_startup_status', 'Ollama wird gestartet. Modelle werden automatisch neu geladen …'), 5000)
                 return
-        if self.worker_thread is not None or self.auto_answer_llm_thread is not None:
+        if self.preflight_active or self.worker_thread is not None or self.auto_answer_llm_thread is not None:
             QMessageBox.warning(self, self.t("already_running_title", "Läuft bereits"), self.t("already_running_message", "Es läuft bereits eine Antwortgenerierung."))
             return
         self.auto_answer_timer.stop()
@@ -4830,7 +5121,7 @@ class MainWindow(QMainWindow):
         if self.config.get("auto_read_user_inputs", False) and self.config.get("tts_backend", "disabled") != "disabled":
             self.read_aloud_message(user_message, show_disabled_message=False, allow_autoplay=True)
 
-    def start_worker(self, messages: List[dict], system_prompt: str, think_mode: bool = False) -> None:
+    def start_worker(self, messages: List[dict], system_prompt: str, reasoning_effort: str = "off") -> None:
         self.active_request_session_id = self.current_session.session_id if self.current_session else ""
         self._set_generation_ui_locked(True)
         self.worker_thread = QThread(self)
@@ -4840,7 +5131,7 @@ class MainWindow(QMainWindow):
             messages=messages,
             system_prompt=system_prompt,
             max_tokens=self._effective_num_predict(messages, system_prompt),
-            think_mode=think_mode,
+            reasoning_effort=reasoning_effort,
             num_ctx=self._effective_ollama_num_ctx(),
         )
         self.worker.moveToThread(self.worker_thread)
@@ -4875,6 +5166,8 @@ class MainWindow(QMainWindow):
             content = ''
             thinking = ''
             if isinstance(payload, dict):
+                if payload.get('stats'):
+                    self.last_ollama_stats = dict(payload['stats'])
                 content = str(payload.get('content', '') or '')
                 thinking = str(payload.get('thinking', '') or '')
             else:
@@ -4897,6 +5190,8 @@ class MainWindow(QMainWindow):
         self.stop_btn.setEnabled(False)
         self.context_retry_in_progress = False
         final_text = normalize_markdown_code_fences(strip_thinking_tags(self.current_assistant_text), close_unfinished=True).strip()
+        if not final_text and self.generation_cancelled:
+            final_text = self.t("generation_stopped", "Generation stopped.")
         if not final_text:
             final_text = 'Keine Textantwort von Ollama empfangen. Bitte Modell/Prompt prüfen oder erneut senden.'
         final_visible_text = build_assistant_visible_content(final_text, self.current_assistant_thinking, self.config.get("interface_language", "de"))
@@ -4915,6 +5210,7 @@ class MainWindow(QMainWindow):
             self.current_session.messages[-1].content = final_text
             self.current_session.messages[-1].display_content = final_visible_text
             assistant_message = self.current_session.messages[-1]
+            self._update_session_title()
             self.store.save(self.current_session)
             self.refresh_sessions_ui()
             if self._knowledge_enabled() and bool(self.config.get("knowledge_auto_capture_chats", True)):
@@ -4935,10 +5231,10 @@ class MainWindow(QMainWindow):
                     except Exception as exc:
                         self._debug_log("knowledge_capture_failed", {"error": str(exc)})
         self.last_saved_code_paths = save_generated_code_blocks(final_text)
-        auto_read = assistant_message is not None and self.config.get("auto_read_assistant_responses", True) and self.config.get("tts_backend", "disabled") != "disabled"
+        auto_read = not self.generation_cancelled and assistant_message is not None and self.config.get("auto_read_assistant_responses", True) and self.config.get("tts_backend", "disabled") != "disabled"
         if assistant_message is not None and auto_read:
             self.read_aloud_message(assistant_message, show_disabled_message=False, allow_autoplay=True)
-        if self.auto_answer_checkbox.isChecked() and not self.input_box.toPlainText().strip():
+        if not self.generation_cancelled and self.auto_answer_checkbox.isChecked() and not self.input_box.toPlainText().strip():
             if auto_read:
                 self.pending_auto_answer_source = final_text
             else:
@@ -4965,6 +5261,12 @@ class MainWindow(QMainWindow):
             "saved_code_paths": [str(path) for path in self.last_saved_code_paths],
             "auto_read_assistant": bool(auto_read),
         })
+        actual = int(self.last_ollama_stats.get("prompt_eval_count", 0) or 0)
+        estimated = int(self.current_request_debug_info.get("request_prompt_tokens_estimated", 0) or 0)
+        if actual and estimated:
+            key = self._context_key()
+            self.token_estimate_factors[key] = max(self.token_estimate_factors.get(key, 1.0), min(4.0, actual / estimated * 1.15))
+        self._debug_log("ollama_statistics", self.last_ollama_stats)
         self.current_request_debug_info = {}
         if self.last_saved_code_paths:
             self.statusBar().showMessage(self.t("code_blocks_saved_status", "{count} Codeblock/Codeblöcke wurden zusätzlich im Unterordner generated_code gespeichert.").format(count=len(self.last_saved_code_paths)), 5000)
@@ -4973,8 +5275,8 @@ class MainWindow(QMainWindow):
 
     def on_worker_failed(self, message: str) -> None:
         self.stop_btn.setEnabled(False)
-        retry_context = self.auto_answer_checkbox.isChecked() and not self.context_retry_in_progress and is_context_overflow_error(message)
-        if retry_context and self.current_session is not None and self.current_session.messages and self.current_session.messages[-1].role == "assistant" and not (self.current_session.messages[-1].content or "").strip():
+        retry_context = not self.generation_cancelled and not self.context_retry_in_progress and (is_context_overflow_error(message) or (is_memory_error(message) and self._effective_ollama_num_ctx() > 2048))
+        if retry_context and not self.current_assistant_text.strip() and not self.current_assistant_thinking.strip() and self.current_session is not None and self.current_session.messages and self.current_session.messages[-1].role == "assistant" and not (self.current_session.messages[-1].content or "").strip():
             self._debug_log("request_failed_context_retry", {"error": message, "request": dict(self.current_request_debug_info)})
             self.current_session.messages.pop()
             if self.current_assistant_bubble is not None:
@@ -4985,6 +5287,10 @@ class MainWindow(QMainWindow):
                     pass
                 self.current_assistant_bubble = None
             self.context_retry_in_progress = True
+            key = self._context_key()
+            reduced = max(2048, self._effective_ollama_num_ctx() // 2)
+            self.context_failure_caps[key] = reduced
+            self.context_decisions[key] = {"num_ctx": reduced, "reason": "error_backoff"}
             self._ensure_safe_session_capacity(
                 additional_messages=1,
                 auto_answer_only=True,
@@ -5006,7 +5312,9 @@ class MainWindow(QMainWindow):
             error_text = f"Fehler bei der Ollama-Anfrage:\n\n{message}"
             self.current_assistant_bubble.set_content(error_text)
         if self.current_session and self.current_session.messages:
-            self.current_session.messages[-1].content = f"Fehler bei der Ollama-Anfrage:\n\n{message}"
+            partial = self.current_assistant_text.strip()
+            self.current_session.messages[-1].content = partial
+            self.current_session.messages[-1].display_content = (partial + "\n\n" if partial else "") + f"Fehler bei der Ollama-Anfrage:\n\n{message}"
             self.store.save(self.current_session)
         self._debug_log("request_failed", {"error": message, "request": dict(self.current_request_debug_info)})
         self.current_request_debug_info = {}
@@ -5035,12 +5343,32 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, lambda text=source: self._schedule_auto_answer(text))
 
     def stop_generation(self) -> None:
+        self.generation_cancelled = True
+        self.auto_answer_timer.stop()
+        self.pending_auto_answer_source = ""
+        self.pending_auto_answer_after_cleanup = ""
+        self.pending_context_retry_after_cleanup = False
+        self.pending_assistant_request_after_auto_llm_cleanup = False
+        self.pending_auto_submit_message = None
+        self.auto_answer_waiting_for_user_audio = False
+        if self.preflight_active:
+            self.preflight_serial += 1
+            self.preflight_active = False
+            self.preflight_timer.stop()
+            self._set_generation_ui_locked(False)
+        if self.auto_answer_llm_worker is not None:
+            self.auto_answer_llm_worker.cancel()
         if self.worker is not None:
             self.worker.cancel()
             self.statusBar().showMessage(self.t("abort_requested", "Abbruch angefordert …"), 2000)
         self.stop_btn.setEnabled(False)
 
     def scroll_to_bottom(self) -> None:
+        if self.navigation_message_index is not None:
+            item = self.chat_layout.itemAt(self.navigation_message_index)
+            if item and item.widget():
+                self.chat_scroll.verticalScrollBar().setValue(item.widget().y())
+            return
         bar = self.chat_scroll.verticalScrollBar()
         bar.setValue(bar.maximum())
 
@@ -5164,7 +5492,7 @@ class MainWindow(QMainWindow):
                     try:
                         winsound.PlaySound(str(path), winsound.SND_FILENAME)
                     except Exception as play_exc:
-                        raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}')
+                        raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}') from play_exc
                     finally:
                         self.current_playback_stoppable = False
                     if self.audio_stop_requested:
@@ -5228,7 +5556,7 @@ class MainWindow(QMainWindow):
                     try:
                         winsound.PlaySound(str(path), winsound.SND_FILENAME)
                     except Exception as play_exc:
-                        raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}')
+                        raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}') from play_exc
                     finally:
                         self.current_playback_stoppable = False
                     if self.audio_stop_requested:
@@ -5342,7 +5670,7 @@ class MainWindow(QMainWindow):
                         try:
                             winsound.PlaySound(str(path), winsound.SND_FILENAME)
                         except Exception as play_exc:
-                            raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}')
+                            raise RuntimeError(f'Windows-Audiowiedergabe fehlgeschlagen: {play_exc}') from play_exc
                         finally:
                             self.current_playback_stoppable = False
                         if self.audio_stop_requested:
@@ -5699,6 +6027,7 @@ class MainWindow(QMainWindow):
         subprocess.Popen(["cmd.exe", "/c", "start", "", str(installer)], cwd=str(installer.parent))
 
     def closeEvent(self, event) -> None:
+        self.stop_generation()
         if self.worker is not None:
             self.worker.cancel()
         if self.auto_answer_llm_worker is not None:
