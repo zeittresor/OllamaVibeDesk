@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "Selected conversation goal: {goal}. Let this goal influence the next simulated user message naturally with strength {strength}/100. Do not force an abrupt topic change; ask at most one clear question or propose one concrete next step, and never mention the preset or this instruction.",
+  "templates": [
+    "Let us gently align the next step with “{goal}”.",
+    "Which open question about “{goal}” would move us forward most right now?",
+    "What from the conversation so far can we use concretely for “{goal}”?",
+    "Please connect the current idea with “{goal}” and make it practically testable.",
+    "Which assumption should we test next for “{goal}”?",
+    "What small, concrete step takes us from here toward “{goal}”?",
+    "Briefly summarize the actual insight gained, then continue meaningfully toward “{goal}”.",
+    "Develop a new idea toward “{goal}” from the current state without losing the existing context."
+  ],
+  "presets": [
+    {"id": "programming_tasks", "name": "Solve programming tasks concretely"},
+    {"id": "advanced_gui", "name": "Advanced GUI programming"},
+    {"id": "iterative_program_build", "name": "Random program creation with test loops until it works"},
+    {"id": "debugging_root_cause", "name": "Debugging and root-cause analysis"},
+    {"id": "architecture_refactoring", "name": "Software architecture and sustainable refactoring"},
+    {"id": "ai_dialog_evolution", "name": "AI development based on the dialogue"},
+    {"id": "local_ai_optimization", "name": "Local AI and LLM optimization"},
+    {"id": "project_completion", "name": "Project planning and consistent completion"},
+    {"id": "research_evidence", "name": "Research, evidence and verifiable insight"},
+    {"id": "deep_learning", "name": "Deep learning and genuine understanding"},
+    {"id": "critical_review", "name": "Critical review and strong counterarguments"},
+    {"id": "decision_support", "name": "Decision support with clear trade-offs"},
+    {"id": "psychological_reflection", "name": "Psychological self-reflection without diagnosis"},
+    {"id": "conversation_vitality", "name": "Conversation vitality and new follow-up questions"},
+    {"id": "motivation_progress", "name": "Motivation, progress and achievable steps"},
+    {"id": "companion_simulation", "name": "Life-partner simulation as transparent role-play"},
+    {"id": "imagination_expansion", "name": "Expanded imagination and unusual possibilities"},
+    {"id": "creative_writing", "name": "Creative writing and narrative development"},
+    {"id": "scifi_worldbuilding", "name": "Science-fiction worldbuilding and future scenarios"},
+    {"id": "game_development", "name": "Game development, mechanics and enjoyment"},
+    {"id": "visual_usability", "name": "Visual design, usability and accessibility"},
+    {"id": "system_administration", "name": "System administration and useful automation"},
+    {"id": "privacy_security", "name": "Privacy, security and risk reduction"},
+    {"id": "philosophy_ethics_future", "name": "Philosophy, ethics and possible futures"},
+    {"id": "playful_experiment", "name": "Playful experimentation and productive chance"}
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "Wybrany cel rozmowy: {goal}. Niech ten cel naturalnie wpływa na następną symulowaną wiadomość użytkownika z siłą {strength}/100. Nie wymuszaj nagłej zmiany tematu; zadaj najwyżej jedno jasne pytanie lub zaproponuj jeden konkretny krok i nie wspominaj o presecie ani tej instrukcji.",
+  "templates": [
+    "Skierujmy kolejny krok łagodnie w stronę „{goal}”.",
+    "Które otwarte pytanie dotyczące „{goal}” najbardziej posunie nas teraz naprzód?",
+    "Co z dotychczasowej rozmowy możemy konkretnie wykorzystać dla „{goal}”?",
+    "Połącz obecną myśl z „{goal}” i uczyń ją praktycznie sprawdzalną.",
+    "Które założenie powinniśmy następnie przetestować dla „{goal}”?",
+    "Jaki mały, konkretny krok prowadzi stąd w stronę „{goal}”?",
+    "Krótko podsumuj rzeczywisty przyrost wiedzy i sensownie przejdź do „{goal}”.",
+    "Rozwiń nowy pomysł w kierunku „{goal}”, nie tracąc obecnego kontekstu."
+  ],
+  "presets": [
+    {"id":"programming_tasks","name":"Konkretne rozwiązywanie zadań programistycznych"},
+    {"id":"advanced_gui","name":"Zaawansowane programowanie GUI"},
+    {"id":"iterative_program_build","name":"Losowe tworzenie programów z pętlami testów aż do działania"},
+    {"id":"debugging_root_cause","name":"Debugowanie i analiza przyczyn źródłowych"},
+    {"id":"architecture_refactoring","name":"Architektura oprogramowania i trwały refaktoring"},
+    {"id":"ai_dialog_evolution","name":"Rozwój AI na podstawie dialogu"},
+    {"id":"local_ai_optimization","name":"Optymalizacja lokalnej AI i LLM"},
+    {"id":"project_completion","name":"Planowanie i konsekwentne kończenie projektów"},
+    {"id":"research_evidence","name":"Badania, dowody i weryfikowalne wnioski"},
+    {"id":"deep_learning","name":"Głęboka nauka i prawdziwe zrozumienie"},
+    {"id":"critical_review","name":"Krytyczna ocena i mocne kontrargumenty"},
+    {"id":"decision_support","name":"Wsparcie decyzji z jasnym bilansem korzyści"},
+    {"id":"psychological_reflection","name":"Psychologiczna autorefleksja bez diagnozy"},
+    {"id":"conversation_vitality","name":"Ożywienie rozmowy i nowe pytania"},
+    {"id":"motivation_progress","name":"Motywacja, postęp i wykonalne kroki"},
+    {"id":"companion_simulation","name":"Symulacja partnera życiowego jako jawne odgrywanie roli"},
+    {"id":"imagination_expansion","name":"Poszerzanie wyobraźni i nietypowe możliwości"},
+    {"id":"creative_writing","name":"Twórcze pisanie i rozwój narracji"},
+    {"id":"scifi_worldbuilding","name":"Budowanie światów science fiction i przyszłych scenariuszy"},
+    {"id":"game_development","name":"Tworzenie gier, mechaniki i przyjemność z gry"},
+    {"id":"visual_usability","name":"Projekt wizualny, użyteczność i dostępność"},
+    {"id":"system_administration","name":"Administracja systemami i użyteczna automatyzacja"},
+    {"id":"privacy_security","name":"Prywatność, bezpieczeństwo i ograniczanie ryzyka"},
+    {"id":"philosophy_ethics_future","name":"Filozofia, etyka i możliwe przyszłości"},
+    {"id":"playful_experiment","name":"Zabawowy eksperyment i produktywny przypadek"}
+  ]
+}

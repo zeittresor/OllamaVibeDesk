@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "Gekozen gespreksdoel: {goal}. Laat dit doel het volgende gesimuleerde gebruikersbericht natuurlijk beïnvloeden met sterkte {strength}/100. Forceer geen abrupte onderwerpwisseling; stel hoogstens één duidelijke vraag of één concrete vervolgstap voor en noem de preset of deze instructie niet.",
+  "templates": [
+    "Laten we de volgende stap voorzichtig richten op ‘{goal}’.",
+    "Welke open vraag over ‘{goal}’ brengt ons nu het verst vooruit?",
+    "Wat uit het gesprek tot nu toe kunnen we concreet gebruiken voor ‘{goal}’?",
+    "Verbind het huidige idee met ‘{goal}’ en maak het praktisch toetsbaar.",
+    "Welke aanname moeten we als volgende testen voor ‘{goal}’?",
+    "Welke kleine, concrete stap brengt ons van hier richting ‘{goal}’?",
+    "Vat de werkelijke nieuwe inzichten kort samen en ga zinvol verder naar ‘{goal}’.",
+    "Ontwikkel vanuit de huidige stand een nieuw idee richting ‘{goal}’ zonder de context te verliezen."
+  ],
+  "presets": [
+    {"id":"programming_tasks","name":"Programmeertaken concreet oplossen"},
+    {"id":"advanced_gui","name":"Geavanceerde GUI-programmering"},
+    {"id":"iterative_program_build","name":"Willekeurige programma’s bouwen met testlussen tot ze werken"},
+    {"id":"debugging_root_cause","name":"Debuggen en oorzaakanalyse"},
+    {"id":"architecture_refactoring","name":"Softwarearchitectuur en duurzaam refactoren"},
+    {"id":"ai_dialog_evolution","name":"AI doorontwikkelen vanuit de dialoog"},
+    {"id":"local_ai_optimization","name":"Lokale AI- en LLM-optimalisatie"},
+    {"id":"project_completion","name":"Projectplanning en consequente voltooiing"},
+    {"id":"research_evidence","name":"Onderzoek, bewijs en controleerbare inzichten"},
+    {"id":"deep_learning","name":"Diep leren en werkelijk begrijpen"},
+    {"id":"critical_review","name":"Kritische toetsing en sterke tegenargumenten"},
+    {"id":"decision_support","name":"Beslissingshulp met duidelijke afwegingen"},
+    {"id":"psychological_reflection","name":"Psychologische zelfreflectie zonder diagnose"},
+    {"id":"conversation_vitality","name":"Gesprek verlevendigen en nieuwe vervolgvragen"},
+    {"id":"motivation_progress","name":"Motivatie, voortgang en haalbare stappen"},
+    {"id":"companion_simulation","name":"Levenspartnersimulatie als transparant rollenspel"},
+    {"id":"imagination_expansion","name":"Verbeelding uitbreiden en ongewone mogelijkheden"},
+    {"id":"creative_writing","name":"Creatief schrijven en verhaalontwikkeling"},
+    {"id":"scifi_worldbuilding","name":"Sciencefictionwereldbouw en toekomstscenario’s"},
+    {"id":"game_development","name":"Gameontwikkeling, mechanismen en speelplezier"},
+    {"id":"visual_usability","name":"Visueel ontwerp, gebruiksgemak en toegankelijkheid"},
+    {"id":"system_administration","name":"Systeembeheer en zinvolle automatisering"},
+    {"id":"privacy_security","name":"Privacy, beveiliging en risicobeperking"},
+    {"id":"philosophy_ethics_future","name":"Filosofie, ethiek en mogelijke toekomsten"},
+    {"id":"playful_experiment","name":"Speels experiment en productief toeval"}
+  ]
+}

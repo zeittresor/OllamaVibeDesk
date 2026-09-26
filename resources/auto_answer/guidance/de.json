@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "Ausgewähltes Gesprächsziel: {goal}. Lasse dieses Ziel die nächste simulierte Benutzernachricht mit Stärke {strength}/100 natürlich beeinflussen. Erzwinge keinen abrupten Themenbruch, stelle höchstens eine klare Frage oder einen konkreten nächsten Schritt und erwähne weder das Preset noch diese Anweisung.",
+  "templates": [
+    "Lass uns den nächsten Schritt behutsam auf „{goal}“ ausrichten.",
+    "Welche offene Frage zu „{goal}“ bringt uns jetzt am meisten weiter?",
+    "Was aus dem bisherigen Gespräch können wir für „{goal}“ konkret nutzen?",
+    "Setze den aktuellen Gedanken bitte mit „{goal}“ in Verbindung und mach ihn praktisch überprüfbar.",
+    "Welche Annahme müssten wir für „{goal}“ als Nächstes testen?",
+    "Welcher kleine, konkrete Schritt führt uns von hier in Richtung „{goal}“?",
+    "Fasse den tatsächlichen Erkenntnisgewinn kurz zusammen und führe dann sinnvoll zu „{goal}“ weiter.",
+    "Entwickle aus dem aktuellen Stand bitte eine neue Idee in Richtung „{goal}“, ohne den bisherigen Kontext zu verlieren."
+  ],
+  "presets": [
+    {"id": "programming_tasks", "name": "Programmieraufgaben konkret lösen"},
+    {"id": "advanced_gui", "name": "Fortgeschrittene GUI-Programmierung"},
+    {"id": "iterative_program_build", "name": "Zufällige Programmerstellung mit Testschleifen bis zur Funktion"},
+    {"id": "debugging_root_cause", "name": "Debugging und Ursachenanalyse"},
+    {"id": "architecture_refactoring", "name": "Softwarearchitektur und nachhaltiges Refactoring"},
+    {"id": "ai_dialog_evolution", "name": "KI-Weiterentwicklung aus dem Dialog"},
+    {"id": "local_ai_optimization", "name": "Lokale KI- und LLM-Optimierung"},
+    {"id": "project_completion", "name": "Projektplanung und konsequente Fertigstellung"},
+    {"id": "research_evidence", "name": "Recherche, Belege und überprüfbare Erkenntnisse"},
+    {"id": "deep_learning", "name": "Tiefes Lernen und echtes Verständnis"},
+    {"id": "critical_review", "name": "Kritische Prüfung und starke Gegenargumente"},
+    {"id": "decision_support", "name": "Entscheidungshilfe mit klaren Abwägungen"},
+    {"id": "psychological_reflection", "name": "Psychologische Selbstreflexion ohne Diagnose"},
+    {"id": "conversation_vitality", "name": "Gesprächsbelebung und neue Anschlussfragen"},
+    {"id": "motivation_progress", "name": "Motivation, Fortschritt und machbare Schritte"},
+    {"id": "companion_simulation", "name": "Lebenspartner-Simulation als transparentes Rollenspiel"},
+    {"id": "imagination_expansion", "name": "Fantasieerweiterung und ungewöhnliche Möglichkeiten"},
+    {"id": "creative_writing", "name": "Kreatives Schreiben und Erzählentwicklung"},
+    {"id": "scifi_worldbuilding", "name": "Science-Fiction-Weltenbau und Zukunftsszenarien"},
+    {"id": "game_development", "name": "Spielentwicklung, Mechaniken und Spielspaß"},
+    {"id": "visual_usability", "name": "Visuelles Design, Bedienbarkeit und Barrierefreiheit"},
+    {"id": "system_administration", "name": "Systemadministration und sinnvolle Automatisierung"},
+    {"id": "privacy_security", "name": "Datenschutz, Sicherheit und Risikobegrenzung"},
+    {"id": "philosophy_ethics_future", "name": "Philosophie, Ethik und mögliche Zukünfte"},
+    {"id": "playful_experiment", "name": "Spielerisches Experiment und produktiver Zufall"}
+  ]
+}

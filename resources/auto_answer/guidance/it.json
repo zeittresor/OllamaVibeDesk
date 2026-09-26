@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "Obiettivo di conversazione selezionato: {goal}. Lascia che questo obiettivo influenzi naturalmente il prossimo messaggio simulato dell’utente con intensità {strength}/100. Non forzare un cambio brusco di argomento; poni al massimo una domanda chiara o proponi un passo concreto e non menzionare il preset né questa istruzione.",
+  "templates": [
+    "Orientiamo con delicatezza il prossimo passo verso «{goal}».",
+    "Quale domanda aperta su «{goal}» ci farebbe avanzare di più adesso?",
+    "Che cosa possiamo usare concretamente della conversazione per «{goal}»?",
+    "Collega l’idea attuale a «{goal}» e rendila verificabile nella pratica.",
+    "Quale ipotesi dovremmo verificare per prima per «{goal}»?",
+    "Quale piccolo passo concreto ci porta da qui verso «{goal}»?",
+    "Riassumi brevemente ciò che abbiamo davvero capito e prosegui verso «{goal}».",
+    "Sviluppa una nuova idea in direzione di «{goal}» senza perdere il contesto attuale."
+  ],
+  "presets": [
+    {"id":"programming_tasks","name":"Risolvere concretamente compiti di programmazione"},
+    {"id":"advanced_gui","name":"Programmazione GUI avanzata"},
+    {"id":"iterative_program_build","name":"Creazione casuale di programmi con cicli di test fino al funzionamento"},
+    {"id":"debugging_root_cause","name":"Debug e analisi delle cause profonde"},
+    {"id":"architecture_refactoring","name":"Architettura software e refactoring sostenibile"},
+    {"id":"ai_dialog_evolution","name":"Sviluppo dell’IA sulla base del dialogo"},
+    {"id":"local_ai_optimization","name":"Ottimizzazione locale di IA e LLM"},
+    {"id":"project_completion","name":"Pianificazione e completamento coerente dei progetti"},
+    {"id":"research_evidence","name":"Ricerca, prove e conoscenze verificabili"},
+    {"id":"deep_learning","name":"Apprendimento profondo e comprensione autentica"},
+    {"id":"critical_review","name":"Revisione critica e forti controargomenti"},
+    {"id":"decision_support","name":"Supporto decisionale con compromessi chiari"},
+    {"id":"psychological_reflection","name":"Autoriflessione psicologica senza diagnosi"},
+    {"id":"conversation_vitality","name":"Vivacità della conversazione e nuove domande"},
+    {"id":"motivation_progress","name":"Motivazione, progresso e passi realizzabili"},
+    {"id":"companion_simulation","name":"Simulazione del partner come gioco di ruolo trasparente"},
+    {"id":"imagination_expansion","name":"Espansione dell’immaginazione e possibilità insolite"},
+    {"id":"creative_writing","name":"Scrittura creativa e sviluppo narrativo"},
+    {"id":"scifi_worldbuilding","name":"Creazione di mondi fantascientifici e scenari futuri"},
+    {"id":"game_development","name":"Sviluppo di giochi, meccaniche e divertimento"},
+    {"id":"visual_usability","name":"Design visivo, usabilità e accessibilità"},
+    {"id":"system_administration","name":"Amministrazione di sistema e automazione utile"},
+    {"id":"privacy_security","name":"Privacy, sicurezza e riduzione dei rischi"},
+    {"id":"philosophy_ethics_future","name":"Filosofia, etica e futuri possibili"},
+    {"id":"playful_experiment","name":"Esperimento giocoso e casualità produttiva"}
+  ]
+}

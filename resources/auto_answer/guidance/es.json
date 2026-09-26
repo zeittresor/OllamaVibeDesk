@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "Objetivo de conversación seleccionado: {goal}. Deja que este objetivo influya de forma natural en el siguiente mensaje simulado del usuario con una intensidad de {strength}/100. No fuerces un cambio brusco de tema; formula como máximo una pregunta clara o un siguiente paso concreto y no menciones el preajuste ni esta instrucción.",
+  "templates": [
+    "Orientemos suavemente el siguiente paso hacia «{goal}».",
+    "¿Qué pregunta abierta sobre «{goal}» nos haría avanzar más ahora?",
+    "¿Qué podemos aprovechar concretamente de la conversación para «{goal}»?",
+    "Relaciona la idea actual con «{goal}» y hazla comprobable en la práctica.",
+    "¿Qué supuesto deberíamos probar a continuación para «{goal}»?",
+    "¿Qué pequeño paso concreto nos acerca desde aquí a «{goal}»?",
+    "Resume brevemente lo aprendido y continúa de forma útil hacia «{goal}».",
+    "Desarrolla una idea nueva en dirección a «{goal}» sin perder el contexto actual."
+  ],
+  "presets": [
+    {"id":"programming_tasks","name":"Resolver tareas de programación de forma concreta"},
+    {"id":"advanced_gui","name":"Programación avanzada de interfaces gráficas"},
+    {"id":"iterative_program_build","name":"Crear programas aleatorios con ciclos de prueba hasta que funcionen"},
+    {"id":"debugging_root_cause","name":"Depuración y análisis de causas raíz"},
+    {"id":"architecture_refactoring","name":"Arquitectura de software y refactorización sostenible"},
+    {"id":"ai_dialog_evolution","name":"Desarrollo de IA a partir del diálogo"},
+    {"id":"local_ai_optimization","name":"Optimización local de IA y LLM"},
+    {"id":"project_completion","name":"Planificación y finalización consecuente de proyectos"},
+    {"id":"research_evidence","name":"Investigación, pruebas y conocimientos verificables"},
+    {"id":"deep_learning","name":"Aprendizaje profundo y comprensión real"},
+    {"id":"critical_review","name":"Revisión crítica y contraargumentos sólidos"},
+    {"id":"decision_support","name":"Ayuda para decidir con comparaciones claras"},
+    {"id":"psychological_reflection","name":"Autorreflexión psicológica sin diagnóstico"},
+    {"id":"conversation_vitality","name":"Reavivar la conversación y crear nuevas preguntas"},
+    {"id":"motivation_progress","name":"Motivación, progreso y pasos alcanzables"},
+    {"id":"companion_simulation","name":"Simulación de pareja como juego de rol transparente"},
+    {"id":"imagination_expansion","name":"Ampliación de la imaginación y posibilidades inusuales"},
+    {"id":"creative_writing","name":"Escritura creativa y desarrollo narrativo"},
+    {"id":"scifi_worldbuilding","name":"Creación de mundos de ciencia ficción y futuros"},
+    {"id":"game_development","name":"Desarrollo de juegos, mecánicas y diversión"},
+    {"id":"visual_usability","name":"Diseño visual, usabilidad y accesibilidad"},
+    {"id":"system_administration","name":"Administración de sistemas y automatización útil"},
+    {"id":"privacy_security","name":"Privacidad, seguridad y reducción de riesgos"},
+    {"id":"philosophy_ethics_future","name":"Filosofía, ética y futuros posibles"},
+    {"id":"playful_experiment","name":"Experimentación lúdica y azar productivo"}
+  ]
+}

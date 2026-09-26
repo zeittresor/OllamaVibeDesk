@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "選択された会話目標: {goal}。この目標を強度 {strength}/100 で、次の模擬ユーザーメッセージに自然に反映してください。話題を唐突に変えず、明確な質問または具体的な次の一歩を一つだけ示し、プリセットやこの指示には言及しないでください。",
+  "templates": [
+    "次の一歩を自然に「{goal}」へ向けてみましょう。",
+    "「{goal}」について、今もっとも前進につながる未解決の問いは何ですか？",
+    "これまでの会話から「{goal}」に具体的に活用できることは何ですか？",
+    "現在の考えを「{goal}」と結び付け、実際に検証できる形にしてください。",
+    "「{goal}」のために次に検証すべき前提は何ですか？",
+    "ここから「{goal}」へ進む、小さく具体的な一歩は何ですか？",
+    "実際に得られた知見を短くまとめ、「{goal}」へ意味のある形で進めてください。",
+    "現在の文脈を失わず、「{goal}」に向けた新しい発想を展開してください。"
+  ],
+  "presets": [
+    {"id":"programming_tasks","name":"プログラミング課題を具体的に解決"},
+    {"id":"advanced_gui","name":"高度なGUIプログラミング"},
+    {"id":"iterative_program_build","name":"動作するまでテストを繰り返すランダムなプログラム作成"},
+    {"id":"debugging_root_cause","name":"デバッグと根本原因分析"},
+    {"id":"architecture_refactoring","name":"ソフトウェア設計と持続可能なリファクタリング"},
+    {"id":"ai_dialog_evolution","name":"対話に基づくAIの発展"},
+    {"id":"local_ai_optimization","name":"ローカルAIとLLMの最適化"},
+    {"id":"project_completion","name":"プロジェクト計画と着実な完成"},
+    {"id":"research_evidence","name":"調査、根拠、検証可能な知見"},
+    {"id":"deep_learning","name":"深い学習と本質的な理解"},
+    {"id":"critical_review","name":"批判的検討と強い反論"},
+    {"id":"decision_support","name":"明確な比較による意思決定支援"},
+    {"id":"psychological_reflection","name":"診断を伴わない心理的自己省察"},
+    {"id":"conversation_vitality","name":"会話の活性化と新しい問い"},
+    {"id":"motivation_progress","name":"動機付け、進歩、実行可能な一歩"},
+    {"id":"companion_simulation","name":"透明なロールプレイとしての人生の伴侶シミュレーション"},
+    {"id":"imagination_expansion","name":"想像力の拡張と意外な可能性"},
+    {"id":"creative_writing","name":"創作と物語の発展"},
+    {"id":"scifi_worldbuilding","name":"SF世界構築と未来シナリオ"},
+    {"id":"game_development","name":"ゲーム開発、仕組み、楽しさ"},
+    {"id":"visual_usability","name":"視覚デザイン、使いやすさ、アクセシビリティ"},
+    {"id":"system_administration","name":"システム管理と有用な自動化"},
+    {"id":"privacy_security","name":"プライバシー、セキュリティ、リスク低減"},
+    {"id":"philosophy_ethics_future","name":"哲学、倫理、あり得る未来"},
+    {"id":"playful_experiment","name":"遊び心ある実験と生産的な偶然"}
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "선택한 대화 목표: {goal}. 이 목표가 다음 모의 사용자 메시지에 강도 {strength}/100으로 자연스럽게 반영되게 하세요. 주제를 갑자기 바꾸지 말고 명확한 질문 또는 구체적인 다음 단계 하나만 제시하며, 프리셋이나 이 지시는 언급하지 마세요.",
+  "templates": [
+    "다음 단계를 자연스럽게 ‘{goal}’ 쪽으로 맞춰 봅시다.",
+    "‘{goal}’에 관해 지금 가장 큰 진전을 만들 열린 질문은 무엇인가요?",
+    "지금까지의 대화에서 ‘{goal}’에 구체적으로 활용할 수 있는 것은 무엇인가요?",
+    "현재 생각을 ‘{goal}’과 연결하고 실제로 검증할 수 있게 만들어 주세요.",
+    "‘{goal}’을 위해 다음에 검증해야 할 가정은 무엇인가요?",
+    "여기서 ‘{goal}’을 향해 갈 수 있는 작고 구체적인 단계는 무엇인가요?",
+    "실제로 얻은 통찰을 짧게 정리하고 ‘{goal}’을 향해 의미 있게 이어가 주세요.",
+    "현재 맥락을 잃지 않으면서 ‘{goal}’ 방향의 새로운 아이디어를 발전시켜 주세요."
+  ],
+  "presets": [
+    {"id":"programming_tasks","name":"프로그래밍 과제를 구체적으로 해결"},
+    {"id":"advanced_gui","name":"고급 GUI 프로그래밍"},
+    {"id":"iterative_program_build","name":"작동할 때까지 테스트를 반복하는 무작위 프로그램 제작"},
+    {"id":"debugging_root_cause","name":"디버깅과 근본 원인 분석"},
+    {"id":"architecture_refactoring","name":"소프트웨어 아키텍처와 지속 가능한 리팩터링"},
+    {"id":"ai_dialog_evolution","name":"대화를 바탕으로 한 AI 발전"},
+    {"id":"local_ai_optimization","name":"로컬 AI와 LLM 최적화"},
+    {"id":"project_completion","name":"프로젝트 계획과 꾸준한 완성"},
+    {"id":"research_evidence","name":"연구, 근거, 검증 가능한 통찰"},
+    {"id":"deep_learning","name":"깊은 학습과 진정한 이해"},
+    {"id":"critical_review","name":"비판적 검토와 강한 반론"},
+    {"id":"decision_support","name":"명확한 비교를 통한 의사결정 지원"},
+    {"id":"psychological_reflection","name":"진단 없는 심리적 자기 성찰"},
+    {"id":"conversation_vitality","name":"대화 활성화와 새로운 후속 질문"},
+    {"id":"motivation_progress","name":"동기, 진전, 실행 가능한 단계"},
+    {"id":"companion_simulation","name":"투명한 역할극으로서의 인생 동반자 시뮬레이션"},
+    {"id":"imagination_expansion","name":"상상력 확장과 색다른 가능성"},
+    {"id":"creative_writing","name":"창의적 글쓰기와 이야기 발전"},
+    {"id":"scifi_worldbuilding","name":"SF 세계 구축과 미래 시나리오"},
+    {"id":"game_development","name":"게임 개발, 메커니즘, 재미"},
+    {"id":"visual_usability","name":"시각 디자인, 사용성, 접근성"},
+    {"id":"system_administration","name":"시스템 관리와 유용한 자동화"},
+    {"id":"privacy_security","name":"개인정보, 보안, 위험 감소"},
+    {"id":"philosophy_ethics_future","name":"철학, 윤리, 가능한 미래"},
+    {"id":"playful_experiment","name":"유쾌한 실험과 생산적인 우연"}
+  ]
+}

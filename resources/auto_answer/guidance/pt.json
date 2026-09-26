@@ -1,0 +1,40 @@
+{
+  "llm_instruction": "Objetivo de conversa selecionado: {goal}. Deixe esse objetivo influenciar naturalmente a próxima mensagem simulada do utilizador com intensidade {strength}/100. Não force uma mudança brusca de assunto; faça no máximo uma pergunta clara ou proponha um próximo passo concreto e não mencione a predefinição nem esta instrução.",
+  "templates": [
+    "Vamos orientar suavemente o próximo passo para «{goal}».",
+    "Que questão em aberto sobre «{goal}» nos faria avançar mais agora?",
+    "O que podemos aproveitar concretamente da conversa para «{goal}»?",
+    "Ligue a ideia atual a «{goal}» e torne-a verificável na prática.",
+    "Que pressuposto devemos testar a seguir para «{goal}»?",
+    "Que pequeno passo concreto nos leva daqui em direção a «{goal}»?",
+    "Resuma brevemente o ganho real de conhecimento e prossiga de modo útil para «{goal}».",
+    "Desenvolva uma nova ideia na direção de «{goal}» sem perder o contexto atual."
+  ],
+  "presets": [
+    {"id":"programming_tasks","name":"Resolver tarefas de programação de forma concreta"},
+    {"id":"advanced_gui","name":"Programação avançada de interfaces gráficas"},
+    {"id":"iterative_program_build","name":"Criação aleatória de programas com ciclos de teste até funcionar"},
+    {"id":"debugging_root_cause","name":"Depuração e análise da causa raiz"},
+    {"id":"architecture_refactoring","name":"Arquitetura de software e refatoração sustentável"},
+    {"id":"ai_dialog_evolution","name":"Desenvolvimento de IA com base no diálogo"},
+    {"id":"local_ai_optimization","name":"Otimização local de IA e LLM"},
+    {"id":"project_completion","name":"Planeamento e conclusão consistente de projetos"},
+    {"id":"research_evidence","name":"Pesquisa, evidências e conhecimento verificável"},
+    {"id":"deep_learning","name":"Aprendizagem profunda e compreensão genuína"},
+    {"id":"critical_review","name":"Análise crítica e contra-argumentos fortes"},
+    {"id":"decision_support","name":"Apoio à decisão com ponderações claras"},
+    {"id":"psychological_reflection","name":"Autorreflexão psicológica sem diagnóstico"},
+    {"id":"conversation_vitality","name":"Revitalização da conversa e novas perguntas"},
+    {"id":"motivation_progress","name":"Motivação, progresso e passos realizáveis"},
+    {"id":"companion_simulation","name":"Simulação de parceiro como representação transparente"},
+    {"id":"imagination_expansion","name":"Expansão da imaginação e possibilidades incomuns"},
+    {"id":"creative_writing","name":"Escrita criativa e desenvolvimento narrativo"},
+    {"id":"scifi_worldbuilding","name":"Construção de mundos de ficção científica e futuros"},
+    {"id":"game_development","name":"Desenvolvimento de jogos, mecânicas e diversão"},
+    {"id":"visual_usability","name":"Design visual, usabilidade e acessibilidade"},
+    {"id":"system_administration","name":"Administração de sistemas e automação útil"},
+    {"id":"privacy_security","name":"Privacidade, segurança e redução de riscos"},
+    {"id":"philosophy_ethics_future","name":"Filosofia, ética e futuros possíveis"},
+    {"id":"playful_experiment","name":"Experiência lúdica e acaso produtivo"}
+  ]
+}
