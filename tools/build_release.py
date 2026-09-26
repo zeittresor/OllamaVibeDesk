@@ -25,17 +25,20 @@ def main() -> int:
     paths = []
     for folder in ('app','tools','tests','resources','lang','themes'):
         paths.extend(p for p in (ROOT/folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix not in {'.pyc','.pyo'})
-    paths.extend(p for p in ROOT.iterdir() if p.is_file() and (p.suffix.lower() in {'.md','.bat','.txt'}))
+    paths.extend(p for p in ROOT.iterdir() if p.is_file() and (
+        p.suffix.lower() in {'.bat', '.txt'} or p.name in {'README.md', 'CHANGELOG.md', 'LICENSE.md'}
+    ))
     try:
         with zipfile.ZipFile(temp,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
             for path in sorted(set(paths)):
-                item = zipfile.ZipInfo(name+'/'+path.relative_to(ROOT).as_posix(), (2026,9,21,0,0,0))
+                item = zipfile.ZipInfo(name+'/'+path.relative_to(ROOT).as_posix(), (2026,9,25,0,0,0))
                 item.compress_type = zipfile.ZIP_DEFLATED
                 item.external_attr = 0o100644 << 16
                 archive.writestr(item, path.read_bytes())
         with zipfile.ZipFile(temp) as archive:
             if archive.testzip(): raise RuntimeError('ZIP integrity failure')
-            assert not any('/app_data/' in p or '/.venv/' in p for p in archive.namelist())
+            assert not any('/app_data/' in p or '/.venv/' in p or '/__pycache__/' in p for p in archive.namelist())
+            assert not any('/TESTBERICHT_' in p for p in archive.namelist())
         temp.replace(target)
     finally:
         temp.unlink(missing_ok=True)

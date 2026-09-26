@@ -19,12 +19,13 @@ from app.chat_titles import (
     infer_continuation_index,
     strip_continuation_suffix,
 )
-from app.config import DEFAULT_CONFIG, normalize_config
+from app.config import DEFAULT_CONFIG, PREFERRED_OLLAMA_MODEL, normalize_config
+from app.guidance_presets import guidance_llm_instruction, guidance_phrases, load_presets
 from app.context_budget import rollover_output_reserve, would_exceed_rollover_budget
 from app.hardware import detect_hardware
 from app.knowledge import LocalKnowledgeBase, uuid_hash
 from app.models import ChatMessage, ChatSession
-from app.personalities import load_personalities, resolve_configured_personality_prompt
+from app.personalities import load_personalities, resolve_configured_personality_prompt, normalized_parameters, render_personality_prompt
 from app.reasoning import (
     configured_reasoning_effort,
     normalize_reasoning_effort,
@@ -49,6 +50,14 @@ from app.version import VERSION
 def main() -> int:
     ensure_auto_answer_data()
     assert DEFAULT_CONFIG["auto_answer_eliza_share"] + DEFAULT_CONFIG["auto_answer_llm_share"] <= 100
+    assert DEFAULT_CONFIG['last_model'] == PREFERRED_OLLAMA_MODEL
+    assert DEFAULT_CONFIG['chat_max_tokens'] == 65536
+    assert DEFAULT_CONFIG['auto_answer_max_rounds'] == 0
+    assert (DEFAULT_CONFIG['auto_answer_eliza_share'], DEFAULT_CONFIG['auto_answer_llm_share']) == (15, 50)
+    assert DEFAULT_CONFIG['auto_answer_guidance_preset'] == 'standard'
+    assert DEFAULT_CONFIG['auto_answer_guidance_strength'] == 65
+    assert normalize_config({'last_model': 'my:own', 'chat_max_tokens': 1024,
+                             'auto_answer_eliza_share': 20, 'auto_answer_llm_share': 30})['last_model'] == 'my:own'
     assert ROOT.joinpath("version.txt").read_text(encoding="utf-8").strip() == VERSION
     assert len(VOICE_STYLE_IDS) >= 8
     assert normalize_voice_style("unknown") == "natural"
@@ -109,8 +118,8 @@ def main() -> int:
     assert len(THEMES) >= 10
     user_personalities = load_personalities("user")
     assistant_personalities = load_personalities("assistant")
-    assert len(user_personalities) == 20
-    assert len(assistant_personalities) == 20
+    assert len(user_personalities) == 35
+    assert len(assistant_personalities) == 35
     assert {item.gender for item in user_personalities} >= {"female", "male", "neutral"}
     assert {item.gender for item in assistant_personalities} >= {"female", "male", "neutral"}
     configured = dict(DEFAULT_CONFIG)
@@ -118,11 +127,23 @@ def main() -> int:
     configured["assistant_personality_id"] = assistant_personalities[0].personality_id
     assert resolve_configured_personality_prompt(configured, "user", "de")
     assert resolve_configured_personality_prompt(configured, "assistant", "de")
+    assert normalized_parameters({"sensuality": -4})["sensuality"] == 0
+    assert normalized_parameters({"sensuality": 130})["sensuality"] == 100
+    for role, example in (("user", user_personalities[0]), ("assistant", assistant_personalities[0])):
+        example.parameters["sensuality"] = 0
+        no_optional = render_personality_prompt(example, "de").lower()
+        assert "sinnlich" not in no_optional and "flirt" not in no_optional and "sensuality" not in no_optional, role
+        example.parameters["sensuality"] = 40
+        assert "40/100" in render_personality_prompt(example, "de"), role
     german, german_questions = load_bundle("de")
     assert german["phrases"]["de"]
     assert german["topic_words"]["de"]
     assert german["eliza"]["de"]
     assert german_questions["replies"]["de"]
+    assert len(load_presets("de")) == 25
+    assert len(guidance_phrases("de", "programming_tasks")) >= 8
+    assert guidance_llm_instruction("de", "programming_tasks", 65)
+    assert not guidance_phrases("de", "standard")
     # Auto-Answer runtime data must never mix languages through fallback.
     for kind in ("phrases", "topic_words", "question_replies", "eliza"):
         assert read_list(kind, "xx", fallback_to_english=False) == []

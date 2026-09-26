@@ -69,6 +69,17 @@ class ContextPolicyTests(unittest.TestCase):
         cfg = normalize_config({'context_policy_version': 24, 'context_message_limit': 8})
         self.assertEqual(cfg['context_message_limit'], 8)
 
+    def test_optional_auto_context_restart_defaults_and_thresholds(self):
+        cfg = normalize_config({})
+        self.assertFalse(cfg['auto_answer_context_restart_enabled'])
+        self.assertEqual(cfg['auto_answer_context_review_percent'], 78)
+        self.assertEqual(cfg['auto_answer_context_hard_percent'], 92)
+        cfg = normalize_config({'auto_answer_context_restart_enabled': True,
+                                'auto_answer_context_review_percent': 90,
+                                'auto_answer_context_hard_percent': 60})
+        self.assertTrue(cfg['auto_answer_context_restart_enabled'])
+        self.assertEqual(cfg['auto_answer_context_hard_percent'], 95)
+
     def test_memory_preserves_goal_provenance_and_uncertainty(self):
         msgs = [ChatMessage.now('user', 'Goal: retain the uncertain hypothesis; never call it verified.')] + [
             ChatMessage.now('assistant', f'Open question {i}: sample {i} has not been tested. ' * 12) for i in range(30)]
@@ -105,8 +116,18 @@ class ContextPolicyTests(unittest.TestCase):
         self.assertNotEqual(infer_topic_title(old), infer_topic_title(old + new))
         self.assertIn('Photovoltaik', infer_topic_title(old + new))
 
+    def test_title_describes_project_and_avoids_two_word_fragment(self):
+        prompt = [ChatMessage.now('user', 'erstell ein gui programm auf godot basis das ein organisch wirkendes 3d objekt dreht mit beleuchtung und schatten')]
+        title = infer_topic_title(prompt, max_length=76)
+        self.assertIn('godot', title.lower())
+        self.assertIn('3d', title.lower())
+        self.assertGreaterEqual(len(title.split()), 4)
+
     def test_metadata_roundtrip(self):
-        s = ChatSession('id','title','now','now', continuity_memory=[{'text':'goal'}], carried_messages=5, root_topic='root', title_history=[{'title':'focus'}], rollover_diagnostics={'num_ctx':8192})
+        s = ChatSession('id','title','now','now', continuity_memory=[{'text':'goal'}], carried_messages=5,
+                        root_topic='root', title_history=[{'title':'focus'}], rollover_diagnostics={'num_ctx':8192},
+                        token_input_total=1234, token_output_total=321, token_request_count=4,
+                        token_totals_initialized=True, project_checkpoint={'files':['main.py']})
         self.assertEqual(ChatSession.from_dict(s.to_dict()).to_dict(), s.to_dict())
 
     def test_memory_errors(self):
