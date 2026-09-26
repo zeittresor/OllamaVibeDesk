@@ -2,7 +2,8 @@
 
 Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **automatic answer function**, **different speakers**, **streaming responses**, and optional **local TTS playback/export** through Windows SAPI or a **VibeVoice compatible build-in server**.
 
-<img width="1415" height="945" alt="vibevoice_2_0" src="https://github.com/user-attachments/assets/3444719a-0501-4302-9fd6-23c648a25798" />
+<img width="1423" height="950" alt="grafik" src="https://github.com/user-attachments/assets/b4770dc2-2e9e-413f-a9c7-c1d1d44a0533" />
+
 
 Voice output example (VibeVoice Mode ; here German language / emotional):
 
