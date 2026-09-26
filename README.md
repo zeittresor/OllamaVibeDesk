@@ -4,6 +4,7 @@ Modern offline-first PyQt6 desktop GUI for a **local Ollama** instance, with **a
 
 <img width="1423" height="950" alt="grafik" src="https://github.com/user-attachments/assets/b4770dc2-2e9e-413f-a9c7-c1d1d44a0533" />
 
+Note: Get the latest release for the latest version, i will add the new code here later..
 
 ## Main features
 
