@@ -15,6 +15,7 @@ class ChatMessage:
     display_content: Optional[str] = None
     auto_answer_source_kind: Optional[str] = None
     auto_answer_source_key: Optional[str] = None
+    image_paths: List[str] = field(default_factory=list)
 
 
     @classmethod
@@ -32,6 +33,7 @@ class ChatMessage:
             display_content=str(raw.get("display_content")) if raw.get("display_content") is not None else None,
             auto_answer_source_kind=str(raw.get("auto_answer_source_kind")) if raw.get("auto_answer_source_kind") else None,
             auto_answer_source_key=str(raw.get("auto_answer_source_key")) if raw.get("auto_answer_source_key") else None,
+            image_paths=[str(p) for p in raw.get("image_paths", [])[:8] if isinstance(p, str)] if isinstance(raw.get("image_paths", []), list) else [],
         )
 
     @classmethod
@@ -75,6 +77,12 @@ class ChatSession:
     root_topic: str = ""
     title_history: list[dict] = field(default_factory=list)
     rollover_diagnostics: dict = field(default_factory=dict)
+    token_input_total: int = 0
+    token_output_total: int = 0
+    token_request_count: int = 0
+    token_totals_initialized: bool = False
+    token_totals_estimated: bool = False
+    project_checkpoint: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -93,6 +101,12 @@ class ChatSession:
             "root_topic": self.root_topic,
             "title_history": self.title_history,
             "rollover_diagnostics": self.rollover_diagnostics,
+            "token_input_total": self.token_input_total,
+            "token_output_total": self.token_output_total,
+            "token_request_count": self.token_request_count,
+            "token_totals_initialized": self.token_totals_initialized,
+            "token_totals_estimated": self.token_totals_estimated,
+            "project_checkpoint": self.project_checkpoint,
         }
 
     @classmethod
@@ -126,6 +140,14 @@ class ChatSession:
         except (TypeError, ValueError):
             session.carried_messages = 0
         session.rollover_diagnostics = raw.get("rollover_diagnostics", {}) if isinstance(raw.get("rollover_diagnostics"), dict) else {}
+        for key in ("token_input_total", "token_output_total", "token_request_count"):
+            try:
+                setattr(session, key, max(0, int(raw.get(key, 0) or 0)))
+            except (TypeError, ValueError):
+                setattr(session, key, 0)
+        session.token_totals_initialized = bool(raw.get("token_totals_initialized", False))
+        session.token_totals_estimated = bool(raw.get("token_totals_estimated", False))
+        session.project_checkpoint = raw.get("project_checkpoint", {}) if isinstance(raw.get("project_checkpoint"), dict) else {}
         raw_messages = raw.get("messages", [])
         if not isinstance(raw_messages, list):
             raw_messages = []

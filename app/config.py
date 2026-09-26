@@ -26,14 +26,19 @@ def get_app_root() -> Path:
 APP_ROOT = get_app_root()
 APP_DATA_DIR = APP_ROOT / "app_data"
 CHATS_DIR = APP_DATA_DIR / "chats"
-AUDIO_DIR = APP_DATA_DIR / "audio"
 CACHE_DIR = APP_DATA_DIR / "cache"
-EXPORTS_DIR = APP_DATA_DIR / "exports"
-GENERATED_CODE_DIR = APP_DATA_DIR / "generated_code"
 DEBUG_LOG_DIR = APP_DATA_DIR / "debug_logs"
 SETTINGS_PROFILE_DIR = APP_DATA_DIR / "config_profiles"
 KNOWLEDGE_DIR = APP_DATA_DIR / "knowledge_base"
 TTS_DIR = APP_DATA_DIR / "tts"
+ATTACHMENTS_DIR = APP_DATA_DIR / "attachments"
+OUTPUTS_DIR = APP_ROOT / "OUTPUTS"
+AUDIO_DIR = OUTPUTS_DIR / "audio" / "tts"
+VOICE_INPUT_DIR = OUTPUTS_DIR / "audio" / "recordings"
+EXPORTS_DIR = OUTPUTS_DIR / "chat_exports"
+GENERATED_CODE_DIR = OUTPUTS_DIR / "code_blocks"
+PROJECTS_DIR = OUTPUTS_DIR / "projects"
+PROJECT_WORKSPACES_DIR = PROJECTS_DIR / "workspaces"
 LANG_DIR = APP_ROOT / "lang"
 THEMES_DIR = APP_ROOT / "themes"
 AUTO_ANSWER_DIR = APP_DATA_DIR / "auto_answer"
@@ -46,6 +51,7 @@ PERSONALITIES_USER_DIR = PERSONALITIES_DIR / "user"
 PERSONALITIES_ASSISTANT_DIR = PERSONALITIES_DIR / "assistant"
 SAPI_LEXICON_PATH = TTS_DIR / "sapi_lexicon.json"
 CONFIG_PATH = APP_DATA_DIR / "config.json"
+PREFERRED_OLLAMA_MODEL = "hf.co/mradermacher/Huihui-Qwen3.8-27B-abliterated-GGUF:Q3_K_M"
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "ollama_base_url": "http://127.0.0.1:11434",
@@ -69,6 +75,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "tts_user_style": "natural",
     "tts_assistant_style_intensity": 65,
     "tts_user_style_intensity": 65,
+    "audio_postproduction_enabled": False,
+    "audio_postproduction_chorus": 0,
+    "audio_postproduction_echo": 0,
+    "audio_postproduction_vocoder": 0,
+    "audio_postproduction_reverb": 0,
     "windows_sapi_rate": 0,
     "windows_sapi_pitch": 0,
     "windows_sapi_volume": 100,
@@ -81,28 +92,31 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "asr_language": "auto",
     "interface_language": "de",
     "theme": "Midnight",
-    "last_model": "",
+    "last_model": PREFERRED_OLLAMA_MODEL,
     "system_prompt": "",
     "auto_answer_enabled": True,
     "read_all_include_names": False,
     "user_display_name": "",
     "assistant_display_name": "",
     "strip_emojis_for_tts": True,
-    "chat_max_tokens": 8192,
+    "chat_max_tokens": 65536,
     "auto_answer_max_rounds": 0,
     "context_message_limit": 0,
     "hardware_auto_context": True,
     "context_policy_version": 24,
     "ollama_num_ctx": 32768,
     "auto_answer_short_answers": False,
-    "auto_answer_eliza_share": 30,
-    "auto_answer_llm_share": 0,
+    "auto_answer_eliza_share": 15,
+    "auto_answer_llm_share": 50,
     "auto_answer_llm_model": "",
     "auto_answer_llm_max_tokens": 512,
     "auto_answer_llm_system_prompt": "",
     "user_personality_id": "custom",
     "assistant_personality_id": "custom",
     "auto_answer_llm_include_recent_context": True,
+    "auto_answer_context_restart_enabled": False,
+    "auto_answer_context_review_percent": 78,
+    "auto_answer_context_hard_percent": 92,
     "auto_answer_phrase_repeat_lookback": 4,
     "rollover_carry_messages": 0,
     "auto_answer_short_instruction_overrides": {},
@@ -111,12 +125,42 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "auto_thinking_for_code_requests": True,
     "reasoning_default_effort": "auto",
     "model_reasoning_efforts": {},
+    "reasoning_settings_model": "",
     "auto_answer_use_question_replies_for_all": True,
     "allow_consecutive_auto_answer_dataset_reuse": False,
+    "auto_answer_guidance_preset": "standard",
+    "auto_answer_guidance_strength": 65,
+    "auto_answer_guidance_apply_to_phrases": True,
+    "auto_answer_guidance_apply_to_llm": True,
     "persistent_knowledge_enabled": False,
     "knowledge_source_path": "",
     "knowledge_retrieval_limit": 5,
     "knowledge_auto_capture_chats": True,
+    "sidebar_width": 320,
+    "sidebar_hidden": False,
+    "plugin_commandline_enabled": False,
+    "plugin_powershell_enabled": False,
+    "plugin_vision_enabled": False,
+    "plugin_webcam_enabled": False,
+    "plugin_sensors_enabled": False,
+    "plugin_location_enabled": False,
+    "plugin_web_enabled": False,
+    "plugin_printer_enabled": False,
+    "plugin_3d_printer_enabled": False,
+    "plugin_robotics_enabled": False,
+    "plugin_commandline_policy": "ask",
+    "plugin_powershell_policy": "ask",
+    "plugin_sensors_policy": "ask",
+    "plugin_location_policy": "ask",
+    "plugin_vision_policy": "ask",
+    "plugin_webcam_policy": "ask",
+    "plugin_web_policy": "ask",
+    "plugin_printer_policy": "ask",
+    "plugin_3d_printer_policy": "ask",
+    "plugin_robotics_policy": "ask",
+    "plugin_3d_printer_url": "http://127.0.0.1:5000",
+    "plugin_3d_printer_api_key": "",
+    "plugin_robotics_url": "http://127.0.0.1:8765",
 }
 
 
@@ -125,10 +169,16 @@ _BOOL_KEYS = {
     "tts_lexicon_enabled", "windows_sapi_lexicon_enabled", "auto_answer_enabled",
     "read_all_include_names", "strip_emojis_for_tts", "auto_answer_short_answers",
     "hardware_auto_context", "auto_answer_llm_include_recent_context",
+    "auto_answer_context_restart_enabled",
     "tts_voice_defaults_initialized", "debug_trace_enabled",
     "auto_thinking_for_code_requests", "auto_answer_use_question_replies_for_all",
     "allow_consecutive_auto_answer_dataset_reuse", "persistent_knowledge_enabled",
+    "auto_answer_guidance_apply_to_phrases", "auto_answer_guidance_apply_to_llm",
+    "audio_postproduction_enabled",
     "knowledge_auto_capture_chats",
+    "sidebar_hidden", "plugin_commandline_enabled", "plugin_powershell_enabled",
+    "plugin_vision_enabled", "plugin_webcam_enabled", "plugin_sensors_enabled", "plugin_location_enabled",
+    "plugin_web_enabled", "plugin_printer_enabled", "plugin_3d_printer_enabled", "plugin_robotics_enabled",
 }
 
 _INT_RANGES = {
@@ -140,16 +190,24 @@ _INT_RANGES = {
     "windows_sapi_user_volume": (0, 100),
     "tts_assistant_style_intensity": (0, 100),
     "tts_user_style_intensity": (0, 100),
-    "chat_max_tokens": (64, 262144),
+    "audio_postproduction_chorus": (0, 100),
+    "audio_postproduction_echo": (0, 100),
+    "audio_postproduction_vocoder": (0, 100),
+    "audio_postproduction_reverb": (0, 100),
+    "chat_max_tokens": (64, 1000000),
     "auto_answer_max_rounds": (0, 100000),
     "context_message_limit": (0, 10000),
     "ollama_num_ctx": (2048, 262144),
     "auto_answer_eliza_share": (0, 100),
     "auto_answer_llm_share": (0, 100),
     "auto_answer_llm_max_tokens": (32, 8192),
+    "auto_answer_context_review_percent": (50, 90),
+    "auto_answer_context_hard_percent": (60, 99),
     "auto_answer_phrase_repeat_lookback": (1, 50),
+    "auto_answer_guidance_strength": (0, 100),
     "rollover_carry_messages": (0, 200),
     "knowledge_retrieval_limit": (1, 12),
+    "sidebar_width": (230, 800),
 }
 
 
@@ -192,6 +250,14 @@ def normalize_config(data: object) -> Dict[str, Any]:
 
     for key in _BOOL_KEYS:
         merged[key] = _coerce_bool(merged.get(key), bool(DEFAULT_CONFIG.get(key, False)))
+    for plugin in ('commandline', 'powershell', 'sensors', 'location', 'vision', 'webcam',
+                   'web', 'printer', '3d_printer', 'robotics'):
+        key = f'plugin_{plugin}_policy'
+        value = str(merged.get(key, 'ask') or 'ask').strip().lower()
+        allowed = {'ask', 'deny', 'allow'}
+        if plugin in {'printer', '3d_printer', 'robotics'}:
+            allowed.add('allow_unattended')
+        merged[key] = value if value in allowed else 'ask'
     for key, (minimum, maximum) in _INT_RANGES.items():
         merged[key] = clamp_int(merged.get(key), minimum, maximum, int(DEFAULT_CONFIG[key]))
 
@@ -199,6 +265,12 @@ def normalize_config(data: object) -> Dict[str, Any]:
     merged["tts_base_url"] = _normalize_http_url(merged.get("tts_base_url"), DEFAULT_CONFIG["tts_base_url"])
     merged["crispasr_tts_base_url"] = _normalize_http_url(merged.get("crispasr_tts_base_url"), DEFAULT_CONFIG["crispasr_tts_base_url"])
     merged["asr_base_url"] = _normalize_http_url(merged.get("asr_base_url"), DEFAULT_CONFIG["asr_base_url"])
+    merged["plugin_3d_printer_url"] = _normalize_http_url(
+        merged.get("plugin_3d_printer_url"), DEFAULT_CONFIG["plugin_3d_printer_url"])
+    merged["plugin_robotics_url"] = _normalize_http_url(
+        merged.get("plugin_robotics_url"), DEFAULT_CONFIG["plugin_robotics_url"])
+    api_key = str(merged.get("plugin_3d_printer_api_key", "") or "").strip()
+    merged["plugin_3d_printer_api_key"] = api_key[:512] if not any(char in api_key for char in "\r\n\0") else ""
     backend = str(merged.get("tts_backend", "disabled") or "disabled").strip()
     merged["tts_backend"] = backend if backend in {"disabled", "windows_sapi", "vibevoice_openai", "crispasr_openai"} else "disabled"
     asr_backend = str(merged.get("asr_backend", "disabled") or "disabled").strip()
@@ -240,6 +312,15 @@ def normalize_config(data: object) -> Dict[str, Any]:
     merged["model_reasoning_efforts"] = normalize_model_reasoning_efforts(
         merged.get("model_reasoning_efforts", {})
     )
+    reasoning_settings_model = str(merged.get("reasoning_settings_model", "") or "").strip()
+    merged["reasoning_settings_model"] = (
+        reasoning_settings_model if len(reasoning_settings_model) <= 240
+        and not any(char in reasoning_settings_model for char in "\r\n\0") else ""
+    )
+    guidance_preset = str(merged.get("auto_answer_guidance_preset", "standard") or "standard").strip().lower()
+    merged["auto_answer_guidance_preset"] = (
+        guidance_preset if re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", guidance_preset) else "standard"
+    )
 
     # v2.1 only had one set of SAPI controls. Preserve it for the assistant and
     # initialize the user role independently when loading older profiles.
@@ -264,6 +345,11 @@ def normalize_config(data: object) -> Dict[str, Any]:
     llm = int(merged["auto_answer_llm_share"])
     if eliza + llm > 100:
         merged["auto_answer_llm_share"] = max(0, 100 - eliza)
+    # The deterministic safety limit must always remain above the point at
+    # which the optional model review begins.
+    review_percent = int(merged["auto_answer_context_review_percent"])
+    hard_percent = int(merged["auto_answer_context_hard_percent"])
+    merged["auto_answer_context_hard_percent"] = max(review_percent + 5, hard_percent)
     return merged
 
 
@@ -376,9 +462,13 @@ def ensure_directories() -> None:
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     CHATS_DIR.mkdir(parents=True, exist_ok=True)
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    VOICE_INPUT_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
     GENERATED_CODE_DIR.mkdir(parents=True, exist_ok=True)
+    PROJECT_WORKSPACES_DIR.mkdir(parents=True, exist_ok=True)
+    (PROJECTS_DIR / "zips").mkdir(parents=True, exist_ok=True)
+    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
     DEBUG_LOG_DIR.mkdir(parents=True, exist_ok=True)
     SETTINGS_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -390,6 +480,20 @@ def ensure_directories() -> None:
     AUTO_ANSWER_QUESTION_REPLIES_DIR.mkdir(parents=True, exist_ok=True)
     PERSONALITIES_USER_DIR.mkdir(parents=True, exist_ok=True)
     PERSONALITIES_ASSISTANT_DIR.mkdir(parents=True, exist_ok=True)
+    output_readme = OUTPUTS_DIR / "README.txt"
+    if not output_readme.exists():
+        atomic_write_text(output_readme, (
+            "OllamaVibeDesk-Ausgaben\n"
+            "========================\n\n"
+            "code_blocks/       einzeln erkannte, abgeschlossene Codeblöcke\n"
+            "projects/zips/     zusammengehörige, versionierte Projektarchive\n"
+            "projects/workspaces/ durch lokale Werkzeuge erzeugte Projektdateien\n"
+            "audio/tts/         erzeugte Sprachausgabe und Nachbearbeitungen\n"
+            "audio/recordings/  bewusst gestartete Mikrofonaufnahmen\n"
+            "chat_exports/      exportierte Chat-Dokumente\n\n"
+            "Interne Daten wie Chats, Einstellungen und Wissensquellen verbleiben in app_data.\n"
+            "Ausgaben älterer Versionen werden nicht automatisch verschoben oder gelöscht.\n"
+        ))
     ensure_default_sapi_lexicon()
     ensure_default_auto_answer_phrases()
     ensure_default_auto_answer_question_replies()

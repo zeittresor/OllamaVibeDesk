@@ -13,7 +13,7 @@ _CONTINUATION_RE = re.compile(
     rf"\s*(?:[-–—·:]\s*)?[\[(]?\s*(?:{_CONTINUATION_WORDS})(?:\s+(\d+))?\s*[\])]?\s*$",
     re.IGNORECASE,
 )
-_TOKEN_RE = re.compile(r"[^\W\d_][\w+#.-]{2,}", re.UNICODE)
+_TOKEN_RE = re.compile(r"(?:[23][dD]\b|[^\W\d_][\w+#.-]{2,})", re.UNICODE)
 
 # A compact multilingual list is sufficient here: the title extractor only
 # needs to suppress conversational glue, not perform linguistic analysis.
@@ -23,10 +23,10 @@ _STOPWORDS = {
     "hier", "ich", "immer", "ist", "kann", "können", "mal", "mehr", "mit", "muss", "noch", "oder", "schon", "sein",
     "sich", "sind", "soll", "sollte", "über", "und", "uns", "von", "wenn", "werden", "wie", "wieder", "wir", "wäre",
     "also", "aktuell", "allgemeine", "bekommen", "bisher", "etwas", "vielleicht", "wirklich", "jeweils", "neuen", "neue", "neuer", "neues",
-    "sollten", "zuerst", "unterstützen", "optimieren", "optimiere", "sprechen",
+    "sollten", "zuerst", "unterstützen", "optimieren", "optimiere", "sprechen", "erstell", "erstelle", "erstellen", "erstellt", "auf", "basis", "zufälliges", "fiktiv", "wirkendes", "darstellt",
     "about", "after", "again", "and", "are", "been", "before", "but", "can", "could", "for", "from", "have",
     "into", "just", "more", "not", "please", "should", "that", "the", "their", "then", "there", "these", "this", "those",
-    "through", "use", "using", "very", "want", "was", "were", "what", "when", "which", "will", "with", "would", "you", "your",
+    "through", "use", "using", "very", "want", "was", "were", "what", "when", "which", "will", "with", "would", "you", "your", "create", "make",
     "chat", "chats", "conversation", "unterhaltung", "antwort", "response", "message", "nachricht", "modell", "model", "models",
     "assistant", "assistent", "user", "benutzer", "funktion", "functions", "feature", "features", "option", "optionen", "settings",
     "pero", "para", "con", "que", "une", "pour", "avec", "mais", "voor", "een", "het", "nie", "oraz", "dla",
@@ -108,13 +108,13 @@ def infer_topic_title(messages: Iterable[object], fallback_title: str = "", max_
                 variants.extend(part for part in token.split("-") if len(part) >= 3)
             for variant in variants:
                 folded = _fold(variant).strip(".-")
-                if len(folded) < 3 or folded in _FOLDED_STOPWORDS or folded.isdigit():
+                if (len(folded) < 3 and folded not in {'2d', '3d'}) or folded in _FOLDED_STOPWORDS or folded.isdigit():
                     continue
                 # Repeated, recent topic words naturally outrank one-off filler.
                 occurrences[folded] += 1
                 if occurrences[folded] > 2:
                     continue
-                token_scores[folded] += recency * role_weight * (1.12 if len(folded) >= 7 else 1.0)
+                token_scores[folded] += recency * role_weight
                 display_forms.setdefault(folded, variant.strip(".-"))
                 first_positions.setdefault(folded, position)
             position += 1
@@ -128,11 +128,11 @@ def infer_topic_title(messages: Iterable[object], fallback_title: str = "", max_
         if any(folded.startswith(existing) or existing.startswith(folded) for existing in selected):
             continue
         selected.append(folded)
-        if len(selected) >= 2:
+        if len(selected) >= (6 if max_length >= 42 else 4):
             break
     selected.sort(key=lambda item: first_positions.get(item, 0))
 
-    title = " · ".join(display_forms[item] for item in selected).strip()
+    title = " ".join(display_forms[item] for item in selected).strip()
     fallback = strip_continuation_suffix(fallback_title).strip()
     if len(title) < 4:
         title = fallback

@@ -29,9 +29,12 @@ if not exist "app_data\logs" mkdir "app_data\logs"
 set "INSTALL_LOG=app_data\logs\install_%APP_VERSION%.log"
 >"%INSTALL_LOG%" echo OllamaVibeDesk %APP_VERSION% installer started %DATE% %TIME%
 
-echo !C_INFO!=================================================!C_RESET!
-echo !C_INFO!  OllamaVibeDesk %APP_VERSION% - Windows Installer!C_RESET!
-echo !C_INFO!=================================================!C_RESET!
+echo.
+echo !C_INFO!  +-------------------------------------------------------------+!C_RESET!
+echo !C_INFO!    OLLAMAVIBEDESK  %APP_VERSION%    /    WINDOWS-SETUP!C_RESET!
+echo !C_INFO!  +-------------------------------------------------------------+!C_RESET!
+echo !C_DIM!    Installation im aktuellen Projektordner!C_RESET!
+echo !C_DIM!    Protokoll: %INSTALL_LOG%!C_RESET!
 echo.
 
 set "PYTHON_CMD="
@@ -57,7 +60,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo !C_INFO![1/7] Validating the release files...!C_RESET!
+call :show_step 1 "Release-Dateien pruefen"
 %PYTHON_CMD% tools\verify_installation.py --source-only >>"%INSTALL_LOG%" 2>&1
 if errorlevel 1 (
     echo !C_ERR!The release package is incomplete or damaged.!C_RESET!
@@ -67,7 +70,7 @@ if errorlevel 1 (
 )
 
 if not exist ".venv\Scripts\python.exe" (
-    echo !C_INFO![2/7] Creating the project-local virtual environment...!C_RESET!
+    call :show_step 2 "Lokale Python-Umgebung anlegen"
     %PYTHON_CMD% -m venv .venv >>"%INSTALL_LOG%" 2>&1
     if errorlevel 1 (
         echo !C_ERR!Failed to create the virtual environment.!C_RESET!
@@ -75,10 +78,10 @@ if not exist ".venv\Scripts\python.exe" (
         exit /b 1
     )
 ) else (
-    echo !C_DIM![2/7] Reusing the existing local virtual environment.!C_RESET!
+    call :show_step 2 "Vorhandene Python-Umgebung wiederverwenden"
 )
 
-echo !C_INFO![3/7] Installing application dependencies...!C_RESET!
+call :show_step 3 "Python-Pakete installieren"
 set "INSTALLED_OFFLINE=0"
 ".venv\Scripts\python.exe" -m pip check >>"%INSTALL_LOG%" 2>&1
 if not errorlevel 1 (
@@ -113,18 +116,20 @@ if "!INSTALLED_OFFLINE!"=="0" (
     echo !C_OK!Dependencies ready locally; no online upgrade required.!C_RESET!
 )
 
-echo !C_INFO![4/7] Preparing portable application directories...!C_RESET!
+call :show_step 4 "Portable Verzeichnisse vorbereiten"
 for %%D in (
     "app_data" "app_data\audio" "app_data\cache" "app_data\chats"
-    "app_data\config_profiles" "app_data\debug_logs" "app_data\exports"
-    "app_data\generated_code" "app_data\knowledge_base" "app_data\logs"
+    "app_data\config_profiles" "app_data\debug_logs"
+    "app_data\knowledge_base" "app_data\logs"
     "app_data\tts" "app_data\auto_answer\phrases" "app_data\auto_answer\topic_words"
     "app_data\auto_answer\question_replies" "app_data\auto_answer\eliza"
     "app_data\personalities" "app_data\personalities\user" "app_data\personalities\assistant"
     "app_data\speech" "app_data\speech\crispasr"
+    "OUTPUTS\audio\tts" "OUTPUTS\audio\recordings" "OUTPUTS\chat_exports"
+    "OUTPUTS\code_blocks" "OUTPUTS\projects\workspaces" "OUTPUTS\projects\zips"
 ) do if not exist "%%~D" mkdir "%%~D"
 
-echo !C_INFO![5/7] Verifying installed packages and GUI startup...!C_RESET!
+call :show_step 5 "Pakete, Funktionen und GUI pruefen"
 ".venv\Scripts\python.exe" -m pip check >>"%INSTALL_LOG%" 2>&1
 if errorlevel 1 (
     echo !C_ERR!Installed package dependencies are inconsistent.!C_RESET!
@@ -133,17 +138,46 @@ if errorlevel 1 (
     exit /b 1
 )
 set "QT_QPA_PLATFORM=offscreen"
+if exist "%WINDIR%\Fonts" set "QT_QPA_FONTDIR=%WINDIR%\Fonts"
 ".venv\Scripts\python.exe" tools\verify_installation.py >>"%INSTALL_LOG%" 2>&1
 set "VERIFY_EXIT=!ERRORLEVEL!"
 set "QT_QPA_PLATFORM="
+set "QT_QPA_FONTDIR="
 if not "!VERIFY_EXIT!"=="0" (
     echo !C_ERR!Installation verification failed; the app will not be started.!C_RESET!
     echo !C_WARN!See %INSTALL_LOG% for details.!C_RESET!
+    echo !C_DIM!Letzte Protokollzeilen:!C_RESET!
+    powershell -NoProfile -Command "Get-Content -LiteralPath '%INSTALL_LOG%' -Tail 9" 2>nul
     pause
     exit /b 1
 )
 
-echo !C_INFO![6/7] Optional VibeVoice ASR/GGUF-TTS runtime...!C_RESET!
+call :show_step 6 "Empfohlenes Ollama-Modell pruefen"
+".venv\Scripts\python.exe" tools\optional_default_model.py --check >>"%INSTALL_LOG%" 2>&1
+if errorlevel 2 (
+    echo !C_DIM!Local Ollama is unavailable; the model download can be done later.!C_RESET!
+) else if errorlevel 1 (
+    echo !C_INFO!Recommended: Huihui-Qwen3.8-27B-abliterated Q3_K_M - approx. 13.5 GB.!C_RESET!
+    choice /C YN /N /T 10 /D N /M "Download the recommended Ollama model? [Y/N] "
+    if errorlevel 2 (
+        echo !C_DIM!Model download skipped. The app will use installed models.!C_RESET!
+        >>"%INSTALL_LOG%" echo Recommended model declined or prompt timed out.
+    ) else (
+        echo !C_INFO!Downloading through local Ollama; this may take a while...!C_RESET!
+        ".venv\Scripts\python.exe" tools\optional_default_model.py --pull
+        if errorlevel 1 (
+            echo !C_WARN!The model could not be downloaded. The app remains usable with installed models.!C_RESET!
+            >>"%INSTALL_LOG%" echo Recommended model download failed; retry with Ollama later.
+        ) else (
+            echo !C_OK!Recommended model installed.!C_RESET!
+            >>"%INSTALL_LOG%" echo Recommended model installed or already present.
+        )
+    )
+) else (
+    echo !C_DIM!Recommended Ollama model is already installed.!C_RESET!
+)
+
+call :show_step 7 "Optionale Sprachlaufzeit pruefen"
 if exist "app_data\speech\crispasr\runtime\crispasr.exe" (
     echo !C_DIM!CrispASR is already installed.!C_RESET!
 ) else (
@@ -160,21 +194,20 @@ if exist "app_data\speech\crispasr\runtime\crispasr.exe" (
     )
 )
 
-echo !C_INFO![7/7] Preparing the optional local wiki template...!C_RESET!
-if not exist "app_data\cache\tiddlywiki_empty.html" (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://tiddlywiki.com/empty.html' -OutFile 'app_data\cache\tiddlywiki_empty.html' -UseBasicParsing -TimeoutSec 20; exit 0 } catch { exit 1 }" >>"%INSTALL_LOG%" 2>&1
-    if errorlevel 1 (
-        echo !C_WARN!The optional TiddlyWiki template could not be downloaded. The app remains usable.!C_RESET!
-    ) else (
-        echo !C_OK!Blank TiddlyWiki template cached successfully.!C_RESET!
-    )
+call :show_step 8 "Optionale Wiki-Vorlage vorbereiten"
+".venv\Scripts\python.exe" tools\prepare_tiddlywiki.py --target "app_data\cache\tiddlywiki_empty.html" >>"%INSTALL_LOG%" 2>&1
+if errorlevel 1 (
+    echo !C_WARN!The optional TiddlyWiki template could not be prepared. The app remains usable; rerun this installer when online.!C_RESET!
 ) else (
-    echo !C_DIM!The local TiddlyWiki template is already cached.!C_RESET!
+    echo !C_OK!Blank TiddlyWiki template is cached and validated.!C_RESET!
 )
 
 >>"%INSTALL_LOG%" echo Installation completed %DATE% %TIME%.
 echo.
-echo !C_OK!Installation and verification completed. Log: %INSTALL_LOG%!C_RESET!
+echo !C_OK!  +-------------------------------------------------------------+!C_RESET!
+echo !C_OK!    INSTALLATION ABGESCHLOSSEN   /   PRUEFUNGEN BESTANDEN!C_RESET!
+echo !C_OK!  +-------------------------------------------------------------+!C_RESET!
+echo !C_DIM!    Protokoll: %INSTALL_LOG%!C_RESET!
 echo !C_WARN!The app starts automatically in 10 seconds. Press N to cancel.!C_RESET!
 for /L %%S in (10,-1,1) do (
     <nul set /p "=!ESC![2K!ESC![1G!C_WARN!Autostart in %%S s (N=cancel)!C_RESET!"
@@ -192,3 +225,18 @@ call run_windows.bat
 
 :end_install
 endlocal
+exit /b 0
+
+:show_step
+set "STEP_BAR=................................"
+if "%~1"=="1" set "STEP_BAR=####............................"
+if "%~1"=="2" set "STEP_BAR=########........................"
+if "%~1"=="3" set "STEP_BAR=############...................."
+if "%~1"=="4" set "STEP_BAR=################................"
+if "%~1"=="5" set "STEP_BAR=####################............"
+if "%~1"=="6" set "STEP_BAR=########################........"
+if "%~1"=="7" set "STEP_BAR=############################...."
+if "%~1"=="8" set "STEP_BAR=################################"
+echo !C_INFO!  [%~1/8] !C_OK![!STEP_BAR!]!C_RESET!  %~2
+>>"%INSTALL_LOG%" echo [%~1/8] %~2
+exit /b 0

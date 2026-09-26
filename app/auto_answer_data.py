@@ -132,6 +132,8 @@ def ensure_auto_answer_data() -> None:
             target = DATA_DIR / kind / source.name
             if not target.exists():
                 atomic_write_text(target, source.read_text(encoding="utf-8"))
+    from app.guidance_presets import ensure_guidance_data
+    ensure_guidance_data()
 
 
 def load_bundle(language_code: str) -> tuple[dict, dict]:

@@ -57,8 +57,8 @@ class PersonalityEditorDialog(QDialog):
         self.changed = False
 
         self.setWindowTitle(self.t("personality_editor_title", "Character / personality editor"))
-        self.resize(1120, 760)
-        self.setMinimumSize(920, 650)
+        self.resize(1240, 760)
+        self.setMinimumSize(1040, 650)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -86,6 +86,7 @@ class PersonalityEditorDialog(QDialog):
 
         left = QVBoxLayout()
         self.list_widget = QListWidget()
+        self.list_widget.setMinimumWidth(330)
         self.list_widget.currentItemChanged.connect(self.load_selected)
         left.addWidget(self.list_widget, 1)
         list_buttons = QGridLayout()
@@ -144,6 +145,11 @@ class PersonalityEditorDialog(QDialog):
             ("assertiveness", "personality_parameter_assertiveness", "Assertiveness"),
             ("curiosity", "personality_parameter_curiosity", "Curiosity"),
             ("creativity", "personality_parameter_creativity", "Creativity"),
+            ("professionalism", "personality_parameter_professionalism", "Professionalism"),
+            ("patience", "personality_parameter_patience", "Patience"),
+            ("skepticism", "personality_parameter_skepticism", "Skepticism"),
+            ("initiative", "personality_parameter_initiative", "Initiative"),
+            ("sensuality", "personality_parameter_sensuality", "Romantic / flirtatious tone (optional)"),
         )
         for index, (key, translation_key, default_label) in enumerate(parameter_keys):
             row, col = divmod(index, 2)
@@ -158,6 +164,13 @@ class PersonalityEditorDialog(QDialog):
             cell.addWidget(spin)
             parameters_grid.addLayout(cell, row, col)
         editor.addLayout(parameters_grid)
+        optional_hint = QLabel(self.t(
+            "personality_sensuality_hint",
+            "0: this dimension is not sent to the model. Values above 0 only affect fitting adult conversations.",
+        ))
+        optional_hint.setObjectName("SubtleLabel")
+        optional_hint.setWordWrap(True)
+        editor.addWidget(optional_hint)
 
         editor.addWidget(QLabel(self.t("personality_editor_system_prompt", "System / personality prompt")))
         self.prompt_edit = QPlainTextEdit()

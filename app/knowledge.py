@@ -23,13 +23,17 @@ MEDIA_EXTENSIONS = {
 STOPWORDS = {
     'und','oder','aber','nicht','eine','einer','eines','einem','einen','der','die','das','den','dem','des','mit','ohne',
     'for','the','and','that','this','with','from','your','you','are','was','were','have','has','had','into','about','please',
-    'ein','eine','einer','einem','einen','ist','sind','war','wir','uns','ich','du','er','sie','es','als','auch','noch','mal',
+    'ein','ist','sind','war','wir','uns','ich','du','er','sie','es','als','auch','noch','mal',
 }
 
+WIKI_STORE_START = '<!-- OLLAMAVIBEDESK-KNOWLEDGE-START -->'
+WIKI_STORE_END = '<!-- OLLAMAVIBEDESK-KNOWLEDGE-END -->'
+WIKI_PLACEHOLDER_MARKER = 'data-ollamavibedesk-placeholder="true"'
 
-def _slug(text: str) -> str:
+
+def _slug(text: str, max_length: int = 96) -> str:
     cleaned = re.sub(r'[^a-zA-Z0-9_-]+', '-', str(text or '').strip())
-    return cleaned.strip('-_') or 'item'
+    return (cleaned.strip('-_') or 'item')[:max_length].rstrip('-_') or 'item'
 
 
 def _norm(text: str) -> str:
@@ -49,11 +53,15 @@ def extract_keywords(text: str) -> list[str]:
 
 
 def _safe_read_text(path: Path, max_chars: int = 50000) -> str:
+    try:
+        with path.open('rb') as handle:
+            raw = handle.read(max_chars * 4)
+    except OSError:
+        return ''
     for encoding in ('utf-8', 'utf-8-sig', 'cp1252', 'latin-1'):
         try:
-            data = path.read_text(encoding=encoding, errors='ignore')
-            return data[:max_chars]
-        except Exception:
+            return raw.decode(encoding, errors='ignore')[:max_chars]
+        except (LookupError, UnicodeError):
             continue
     return ''
 
@@ -102,22 +110,99 @@ class LocalKnowledgeBase:
             atomic_write_text(
                 readme,
                 'This folder is used by OllamaVibeDesk as a local knowledge source.\n'
-                'The app writes Tiddler-compatible text files to the tiddlers subfolder.\n'
-                'If a blank TiddlyWiki file is cached, it is copied here as brain.html.\n'
+                'The app writes Tiddler-compatible text files to the tiddlers subfolder and mirrors them into brain.html.\n'
+                'A validated blank TiddlyWiki template is copied here automatically when available.\n'
                 'Open brain.html locally to browse and extend the knowledge workspace.\n',
             )
         brain_html = wiki_dir / 'brain.html'
-        if not brain_html.exists():
-            if self.default_wiki_template.exists():
+        replace_placeholder = False
+        if brain_html.exists():
+            try:
+                replace_placeholder = WIKI_PLACEHOLDER_MARKER in brain_html.read_text(encoding='utf-8', errors='ignore')
+            except OSError:
+                replace_placeholder = False
+        if not brain_html.exists() or replace_placeholder:
+            if self.template_available():
                 shutil.copy2(self.default_wiki_template, brain_html)
             else:
                 atomic_write_text(
                     brain_html,
-                    '<!doctype html><html><head><meta charset="utf-8"><title>OllamaVibeDesk Brain</title></head>'
+                    f'<!doctype html><html {WIKI_PLACEHOLDER_MARKER}><head><meta charset="utf-8"><title>OllamaVibeDesk Brain</title></head>'
                     '<body><h1>OllamaVibeDesk Brain</h1><p>No blank TiddlyWiki template was found in the local cache.</p>'
                     '<p>Place <code>tiddlywiki_empty.html</code> in <code>app_data/cache</code> so new knowledge workspaces can reuse it offline.</p></body></html>',
                 )
+        self.sync_single_file_wiki(wiki_dir)
         return wiki_dir
+
+    def template_available(self) -> bool:
+        try:
+            if self.default_wiki_template.stat().st_size < 100_000:
+                return False
+            sample = self.default_wiki_template.read_text(encoding='utf-8', errors='ignore')
+            return 'tiddlywiki-tiddler-store' in sample and '$:/boot/boot.js' in sample
+        except OSError:
+            return False
+
+    @staticmethod
+    def _wiki_timestamp(value: object) -> str:
+        raw = str(value or '').strip()
+        try:
+            parsed = datetime.fromisoformat(raw)
+            return parsed.strftime('%Y%m%d%H%M%S%f')[:-3]
+        except (TypeError, ValueError):
+            return _tiddler_timestamp()
+
+    def _single_file_tiddlers(self, wiki_dir: Path) -> list[dict]:
+        tiddlers: list[dict] = []
+        for entry in self.load_entries():
+            entry_id = str(entry.get('id', '') or '')
+            base_title = self._tiddler_header_value(entry.get('title', 'Memory')) or 'Memory'
+            created = self._wiki_timestamp(entry.get('created_at'))
+            title = f'{base_title} · {created[:8]}-{created[8:14]} · {entry_id[:8] or "memory"}'
+            body = str(entry.get('content', '') or '')
+            media_markup = self._wiki_media_markup(entry, wiki_dir)
+            if media_markup:
+                body = f'{media_markup}\n\n{body}'.strip()
+            if not body:
+                ref = entry.get('stored_path') or entry.get('source_path') or ''
+                body = f'Reference: {ref}'
+            tags = ['OllamaVibeDesk', *[_slug(tag) for tag in entry.get('keywords', [])[:8]]]
+            tiddlers.append({
+                'title': title,
+                'text': body,
+                'created': created,
+                'modified': created,
+                'tags': ' '.join(f'[[{tag}]]' for tag in tags if tag),
+                'type': 'text/vnd.tiddlywiki',
+                'entry-id': entry_id,
+                'entry-type': str(entry.get('type', '') or ''),
+            })
+        return tiddlers
+
+    def sync_single_file_wiki(self, wiki_path: Path) -> bool:
+        """Mirror app-owned entries into a standalone TiddlyWiki HTML file."""
+        wiki_dir = Path(wiki_path)
+        brain_html = wiki_dir / 'brain.html'
+        try:
+            source = brain_html.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return False
+        if 'tiddlywiki-tiddler-store' not in source or '$:/boot/boot.js' not in source:
+            return False
+        encoded = json.dumps(self._single_file_tiddlers(wiki_dir), ensure_ascii=False, separators=(',', ':'))
+        encoded = encoded.replace('<', '\\u003c')
+        block = (f'{WIKI_STORE_START}\n'
+                 f'<script class="tiddlywiki-tiddler-store" type="application/json">{encoded}</script>\n'
+                 f'{WIKI_STORE_END}')
+        if WIKI_STORE_START in source and WIKI_STORE_END in source:
+            source = re.sub(re.escape(WIKI_STORE_START) + r'.*?' + re.escape(WIKI_STORE_END),
+                            lambda _match: block, source, count=1, flags=re.DOTALL)
+        else:
+            doctype = re.search(r'<!doctype\s+html[^>]*>', source, flags=re.IGNORECASE)
+            position = doctype.start() if doctype else 0
+            source = source[:position] + block + '\n' + source[position:]
+        atomic_write_text(brain_html, source)
+        return True
 
     def _copy_if_reasonable(self, source_path: Path) -> tuple[Path, bool]:
         try:
@@ -127,7 +212,9 @@ class LocalKnowledgeBase:
         if size > 32 * 1024 * 1024:
             return source_path, False
         prefix = hashlib.sha1(str(source_path).encode('utf-8')).hexdigest()[:10]
-        target = self.imports_dir / f'{prefix}_{source_path.name}'
+        suffix = source_path.suffix[:16]
+        safe_stem = _slug(source_path.stem, 80)
+        target = self.imports_dir / f'{prefix}_{safe_stem}{suffix}'
         if not target.exists():
             shutil.copy2(source_path, target)
         return target, True
@@ -261,21 +348,30 @@ class LocalKnowledgeBase:
         limit: int = 5,
         heading: str = 'Selectively relevant long-term memory / knowledge archive:',
         reference_label: str = 'Media/file reference',
+        max_chars: int = 0,
     ) -> tuple[str, list[dict]]:
         hits = self.search(query, limit=limit)
         if not hits:
             return '', []
         lines = [heading]
+        included: list[dict] = []
         for idx, entry in enumerate(hits, 1):
             title = str(entry.get('title', 'Eintrag')).strip() or 'Eintrag'
             kind = str(entry.get('type', 'memory')).strip()
             if entry.get('content'):
                 snippet = re.sub(r'\s+', ' ', str(entry.get('content', ''))).strip()[:700]
-                lines.append(f'{idx}. [{kind}] {title}: {snippet}')
+                line = f'{idx}. [{kind}] {title}: {snippet}'
             else:
                 ref = entry.get('stored_path') or entry.get('source_path') or ''
-                lines.append(f'{idx}. [{kind}] {title}: {reference_label} {ref}')
-        return '\n'.join(lines).strip(), hits
+                line = f'{idx}. [{kind}] {title}: {reference_label} {ref}'
+            if max_chars > 0:
+                remaining = max_chars - len('\n'.join(lines)) - 1
+                if remaining < 80:
+                    break
+                line = line[:remaining]
+            lines.append(line)
+            included.append(entry)
+        return '\n'.join(lines).strip(), included
 
     def delete_all(self) -> None:
         if self.root_dir.exists():
@@ -315,8 +411,9 @@ class LocalKnowledgeBase:
     def write_tiddler(self, entry: dict, wiki_path: Path) -> Path:
         wiki_dir = self.create_wiki_workspace(wiki_path)
         tiddlers_dir = wiki_dir / 'tiddlers'
-        title = self._tiddler_header_value(entry.get('title', 'Memory')) or 'Memory'
+        base_title = self._tiddler_header_value(entry.get('title', 'Memory')) or 'Memory'
         created = _tiddler_timestamp()
+        title = f'{base_title} · {created[:8]}-{created[8:14]} · {str(entry.get("id", ""))[:8] or "memory"}'
         tags = ' '.join(_slug(tag) for tag in entry.get('keywords', [])[:8])
         body = str(entry.get('content', '') or '')
         media_markup = self._wiki_media_markup(entry, wiki_dir)
@@ -332,6 +429,7 @@ class LocalKnowledgeBase:
             suffix += 1
             target = tiddlers_dir / f'{created}_{_slug(title)}_{suffix:02d}.tid'
         atomic_write_text(target, text)
+        self.sync_single_file_wiki(wiki_dir)
         return target
 
     def _entry_prompt_context(

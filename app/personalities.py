@@ -25,6 +25,11 @@ DEFAULT_PARAMETERS: Dict[str, Any] = {
     "assertiveness": 50,
     "curiosity": 60,
     "creativity": 50,
+    "professionalism": 50,
+    "patience": 50,
+    "skepticism": 50,
+    "initiative": 50,
+    "sensuality": 0,
 }
 
 LANGUAGE_NAMES = {
@@ -98,7 +103,9 @@ def normalized_parameters(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
         tone = str(raw.get("tone", result["tone"]) or result["tone"]).strip()
         result["tone"] = tone[:80] or "balanced"
-        for key in ("formality", "verbosity", "empathy", "humor", "assertiveness", "curiosity", "creativity"):
+        for key in DEFAULT_PARAMETERS:
+            if key == "tone":
+                continue
             try:
                 result[key] = max(0, min(100, int(raw.get(key, result[key]))))
             except (TypeError, ValueError):
@@ -226,11 +233,24 @@ def render_personality_prompt(personality: Personality, language_code: str) -> s
         "Treat these character values as tendencies from 0 to 100, not rigid quotas: formality={formality}, verbosity={verbosity}, empathy={empathy}, humor={humor}, assertiveness={assertiveness}, curiosity={curiosity}, creativity={creativity}. Tone: {tone}.",
     )
     tuning = str(tuning_template).format(**parameters)
+    additional = str(pack.get(
+        "personality_runtime_extra_tuning",
+        "Additional tendencies from 0 to 100: professionalism={professionalism}, patience={patience}, skepticism={skepticism}, initiative={initiative}.",
+    )).format(**parameters)
+    # The optional sensitive dimension must be completely absent from the
+    # model's prompt at zero.  Merely describing an inactive setting often
+    # derails smaller local models into explaining their content boundaries.
+    optional = ""
+    if parameters["sensuality"] > 0:
+        optional = str(pack.get(
+            "personality_runtime_sensuality",
+            "Optional adult romantic or flirtatious tone: {sensuality}/100. Use only when it fits the conversation and respect boundaries.",
+        )).format(sensuality=parameters["sensuality"])
     language_instruction = str(pack.get(
         "personality_runtime_language_instruction",
         "Use {language} unless the conversation explicitly requires another language.",
     )).format(language=language_name)
-    return f"{base}\n\n{role_instruction}\n{tuning}\n{language_instruction}".strip()
+    return "\n\n".join(part for part in (base, role_instruction, tuning, additional, optional, language_instruction) if part).strip()
 
 
 def resolve_configured_personality_prompt(config: dict, role: str, language_code: str) -> str:

@@ -6,6 +6,7 @@ from typing import Dict, Iterable, List, Optional
 import requests
 
 from app.reasoning import ollama_think_value
+from app.plugin_tools import encode_image
 
 
 class OllamaClient:
@@ -45,6 +46,7 @@ class OllamaClient:
         options: Optional[dict] = None,
         stream: bool = True,
         think: bool | str | None = False,
+        tools: Optional[list[dict]] = None,
     ) -> dict:
         payload = {
             'model': model,
@@ -56,8 +58,16 @@ class OllamaClient:
             payload['think'] = think if isinstance(think, bool) else ollama_think_value(think)
         if options:
             payload['options'] = options
-        if system_prompt.strip():
-            payload['messages'] = [{'role': 'system', 'content': system_prompt.strip()}] + messages
+        if tools:
+            payload['tools'] = tools
+        clean_messages = []
+        for entry in messages:
+            copy = dict(entry)
+            paths = copy.pop('images_paths', [])
+            if paths:
+                copy['images'] = [encode_image(path) for path in paths]
+            clean_messages.append(copy)
+        payload['messages'] = ([{'role': 'system', 'content': system_prompt.strip()}] if system_prompt.strip() else []) + clean_messages
         return payload
 
     @staticmethod
@@ -140,6 +150,21 @@ class OllamaClient:
         content = ''.join(part for part in content_parts if isinstance(part, str) and part)
         thinking = ''.join(part for part in thinking_parts if isinstance(part, str) and part)
         return content, thinking
+
+    def chat_response(self, model: str, messages: List[dict], system_prompt: str = '',
+                      options: Optional[dict] = None, timeout: int = 600,
+                      think: bool | str | None = False, tools: Optional[list[dict]] = None) -> dict:
+        payload = self._payload(model, messages, system_prompt, options=options, stream=False, think=think, tools=tools)
+        response = self._post_with_thinking_fallback(payload, stream=False, timeout=(10, timeout))
+        try:
+            if response.status_code >= 400:
+                raise RuntimeError(f"Ollama HTTP {response.status_code}: {self._response_error_text(response)}")
+            data = response.json()
+        finally:
+            response.close()
+        if not isinstance(data, dict) or data.get('error'):
+            raise RuntimeError(f"Ollama error: {data.get('error') if isinstance(data, dict) else 'invalid response'}")
+        return data
 
     def chat_once(
         self,

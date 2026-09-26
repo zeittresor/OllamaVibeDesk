@@ -20,7 +20,9 @@ if not exist ".venv\Scripts\python.exe" (
 
 for %%D in (
     "app_data" "app_data\audio" "app_data\cache" "app_data\chats"
-    "app_data\debug_logs" "app_data\generated_code" "app_data\knowledge_base" "app_data\logs"
+    "app_data\debug_logs" "app_data\knowledge_base" "app_data\logs"
+    "OUTPUTS\audio\tts" "OUTPUTS\audio\recordings" "OUTPUTS\chat_exports"
+    "OUTPUTS\code_blocks" "OUTPUTS\projects\workspaces" "OUTPUTS\projects\zips"
 ) do if not exist "%%~D" mkdir "%%~D"
 
 ".venv\Scripts\python.exe" tools\verify_installation.py --quick >"app_data\logs\startup_check.log" 2>&1

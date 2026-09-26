@@ -44,4 +44,6 @@ def estimate_token_count(text: str) -> int:
 
 
 def estimate_chat_payload_tokens(messages: list[dict], system_prompt: str = "") -> int:
-    return 16 + estimate_token_count(system_prompt) + sum(12 + estimate_token_count(str(m.get("content", ""))) for m in messages)
+    return 16 + estimate_token_count(system_prompt) + sum(
+        12 + estimate_token_count(str(m.get("content", ""))) + 1024 * len(m.get("images_paths", [])) for m in messages
+    )

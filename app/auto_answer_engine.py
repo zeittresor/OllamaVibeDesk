@@ -115,6 +115,9 @@ def generate_from_clean_text(
     use_question_replies_for_all: bool = True,
     allow_consecutive_dataset_reuse: bool = False,
     source_mode: str = "auto",
+    guidance_phrases: list[str] | None = None,
+    guidance_preset_id: str = "standard",
+    guidance_strength: int = 0,
     rng: random.Random | None = None,
 ) -> dict:
     randomizer = rng or random
@@ -173,11 +176,29 @@ def generate_from_clean_text(
         allow_consecutive_dataset_reuse,
         rng=randomizer,
     )
+    safe_guidance_id = re.sub(r"[^a-z0-9_-]+", "", str(guidance_preset_id or "standard").lower())[:64] or "standard"
+    guidance_candidates = unique_candidates(
+        [(phrase, f"guidance::{safe_guidance_id}::{phrase}") for phrase in (guidance_phrases or [])],
+        blocked_recent,
+        blocked_source_keys,
+        allow_consecutive_dataset_reuse,
+        rng=randomizer,
+    )
+    guidance_chance = max(0, min(100, int(guidance_strength or 0)))
+
+    def choose_guidance() -> dict | None:
+        if not guidance_candidates or guidance_chance <= 0 or randomizer.randint(1, 100) > guidance_chance:
+            return None
+        selected_text, selected_key = randomizer.choice(guidance_candidates)
+        return result(selected_text, "guidance", selected_key)
 
     mode = str(source_mode or "auto").strip().lower()
     if mode == "eliza":
         return result(randomizer.choice(eliza_templates), "eliza", "") if eliza_templates else result()
     if mode == "phrases":
+        guided = choose_guidance()
+        if guided:
+            return guided
         if phrase_candidates:
             selected_text, selected_key = randomizer.choice(phrase_candidates)
             kind = "question_reply" if selected_key.startswith("question_reply::") else "phrase"
@@ -185,9 +206,13 @@ def generate_from_clean_text(
         return result(randomizer.choice(eliza_templates), "eliza", "") if eliza_templates else result()
 
     eliza_share = max(0, min(100, int(eliza_share_percent or 0)))
-    use_eliza = not phrase_candidates or randomizer.randint(1, 100) <= eliza_share
+    use_eliza = not (phrase_candidates or guidance_candidates) or randomizer.randint(1, 100) <= eliza_share
     if use_eliza and eliza_templates:
         return result(randomizer.choice(eliza_templates), "eliza", "")
+    if phrase_candidates or guidance_candidates:
+        guided = choose_guidance()
+        if guided:
+            return guided
     if phrase_candidates:
         selected_text, selected_key = randomizer.choice(phrase_candidates)
         kind = "question_reply" if selected_key.startswith("question_reply::") else "phrase"
