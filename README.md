@@ -37,10 +37,6 @@ https://github.com/user-attachments/assets/997cf864-988d-42f6-9135-f8e57f01b99b
 <img width="451" height="277" alt="ovv_v1_16b" src="https://github.com/user-attachments/assets/1a9844f9-fe1c-47d5-838c-afcbde55120c" />
   
 
-## Example with SAPi output (german language)
-
-<img width="1419" height="947" alt="ui1_1_16" src="https://github.com/user-attachments/assets/e2fa1cf4-b47d-44ea-8f8a-5329d3b4256f" />
-
 Note: Using VibeVoice Mode takes some time to generate a voice output in contrast to the use of the default Windows Sapi.
 
 ## Basic usage instructions / Notes
