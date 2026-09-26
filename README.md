@@ -2,6 +2,8 @@
 
 Offline-orientierte PyQt6-Desktopoberfläche für lokale **Ollama**-Modelle mit Chat-Historie, Streaming, Windows-SAPI/VibeVoice-TTS, VibeVoice-ASR-Mikrofoneingabe, Auto-Answer, Projekt-ZIPs, Plugins, Langzeitgedächtnis und portabler TiddlyWiki-Wissensquelle.
 
+<img width="1423" height="950" alt="v2 16 1" src="https://github.com/user-attachments/assets/72ddc54c-030f-48c3-bff7-5b71b761b665" />
+
 In v2.16.1 bleiben Statusanzeige und Seitenleiste unter Windows bei verschiedenen Auflösungen verschiebbar; der Installer zeigt einen Fortschrittsbalken und liefert bei einem Prüffehler direkt die letzten Logzeilen. In v2.16.0 setzt Auto Answer nach dem erneuten Einschalten eine abgeschlossene Unterhaltung fort. Ein animiertes Symbol links unten zeigt, ob das Modell vorbereitet wird, auf Tokens wartet, gerade denkt oder schreibt, ein Werkzeug benutzt oder auf die nächste Runde übergeht. Nach längerer Zeit ohne neue Modell-Daten zeigt es die verstrichene Zeit; bei einem Abbruch oder Limit den Grund. Ein fehlendes Audio-Abschlussereignis blockiert eine bereits vorbereitete Runde nicht mehr. Die Berechtigungen für Drucker, 3D-Drucker und Robotik aus v2.15.0 bleiben erhalten.
 
 Frühere Änderungen und technische Details stehen in `CHANGELOG.md`.
